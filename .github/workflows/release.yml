@@ -36,6 +36,7 @@ jobs:
       - uses: swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
         with:
           workspaces: src-tauri -> target
+          cache-on-failure: true
       - run: brew install protobuf pkg-config
       - run: pnpm install --frozen-lockfile
       - name: Verify release version

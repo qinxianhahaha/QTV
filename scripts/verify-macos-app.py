@@ -13,7 +13,8 @@ assert plistlib.loads(entitlements).get("com.apple.security.cs.allow-jit") is Tr
 info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
 assert info["CFBundleIdentifier"] == "io.github.qinxianhahaha.qtv"
 executable = app / "Contents/MacOS" / info["CFBundleExecutable"]
-subprocess.run(["lipo", "-verify_arch", architecture, str(executable)], check=True)
+# Older Xcode versions treat every argument after -verify_arch as an architecture.
+subprocess.run(["lipo", str(executable), "-verify_arch", architecture], check=True)
 resources = app / "Contents/Resources/resources"
 for name in ("QTV-AGPL-3.0.txt", "DTV-MIT.txt", "biliup-LICENSE.txt", "crypto-js-LICENSE.txt"):
     assert (resources / name).is_file(), f"Missing license: {name}"
