@@ -11,9 +11,20 @@ pub async fn get_bilibili_live_stream_url_with_quality(
     app_handle: AppHandle,
     stream_url_store: State<'_, StreamUrlStore>,
     proxy_server_handle: State<'_, ProxyServerHandle>,
+    payload: crate::platforms::common::GetStreamUrlPayload, quality: String, cookie: Option<String>, route: Option<usize>,
+) -> Result<crate::platforms::common::LiveStreamInfo, String> {
+    tokio::time::timeout(std::time::Duration::from_secs(35), get_bilibili_live_stream_url_with_quality_inner(app_handle, stream_url_store, proxy_server_handle, payload, quality, cookie, route)).await
+        .map_err(|_| "获取直播流超时，请检查网络后重试".to_string())?
+}
+
+async fn get_bilibili_live_stream_url_with_quality_inner(
+    app_handle: AppHandle,
+    stream_url_store: State<'_, StreamUrlStore>,
+    proxy_server_handle: State<'_, ProxyServerHandle>,
     payload: crate::platforms::common::GetStreamUrlPayload,
     quality: String,
     cookie: Option<String>,
+    route: Option<usize>,
 ) -> Result<crate::platforms::common::LiveStreamInfo, String> {
     let room_id = payload.args.room_id_str.clone();
     if room_id.trim().is_empty() {
@@ -21,6 +32,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             title: None,
             anchor_name: None,
             avatar: None,
+            cover_url: None,
             stream_url: None,
             status: None,
             error_message: Some("房间ID未提供".to_string()),
@@ -81,9 +93,9 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             ("room_id", room_id.to_string()),
             ("protocol", "0,1".to_string()),
             ("format", "0,1,2".to_string()),
-            // 与参考 Python 版本保持一致：codec 使用 0，platform 使用 html5
+            // AVC is supported by the current FLV/HLS player; request desktop streams.
             ("codec", "0".to_string()),
-            ("platform", "html5".to_string()),
+            ("platform", "web".to_string()),
             ("dolby", "5".to_string()),
         ];
         if let Some(q) = qn {
@@ -103,134 +115,12 @@ pub async fn get_bilibili_live_stream_url_with_quality(
         if !status.is_success() {
             return Err(format!("PlayInfo status: {} body: {}", status, text));
         }
-        serde_json::from_str::<Value>(&text)
-            .map_err(|e| format!("JSON parse failed: {} | body: {}", e, text))
-    }
-
-    // 1) First request to get qn mapping
-    let playinfo = request_playinfo(&client, &room_id, None).await?;
-    let playurl = playinfo["data"]["playurl_info"]["playurl"].clone();
-
-    // Build qn->desc map
-    let mut qn_map: Vec<(i32, String)> = vec![];
-    if let Some(arr) = playurl.get("g_qn_desc").and_then(|v| v.as_array()) {
-        for item in arr {
-            let qn = item.get("qn").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-            let desc = item
-                .get("desc")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            qn_map.push((qn, desc));
+        let data: Value = serde_json::from_str(&text).map_err(|e| format!("JSON parse failed: {}", e))?;
+        if data["code"].as_i64() != Some(0) {
+            return Err(format!("B站播放接口错误：{}", data["message"].as_str().unwrap_or("请求失败")));
         }
+        Ok(data)
     }
-    // 解析 accept_qn（首个 stream/format/codec 的可选清晰度）
-    let mut accept_qn: Vec<i32> = vec![];
-    if let Some(streams) = playurl.get("stream").and_then(|v| v.as_array()) {
-        if let Some(first_format) = streams
-            .get(0)
-            .and_then(|s| s.get("format"))
-            .and_then(|v| v.as_array())
-            .and_then(|arr| arr.get(0))
-        {
-            if let Some(first_codec) = first_format
-                .get("codec")
-                .and_then(|v| v.as_array())
-                .and_then(|arr| arr.get(0))
-            {
-                if let Some(arr) = first_codec.get("accept_qn").and_then(|v| v.as_array()) {
-                    for q in arr {
-                        if let Some(i) = q.as_i64() {
-                            accept_qn.push(i as i32);
-                        }
-                    }
-                }
-            }
-        }
-    }
-    // 调试输出：可用的 qn 列表及描述 + accept_qn
-    if !qn_map.is_empty() {
-        let qn_str = qn_map
-            .iter()
-            .map(|(q, d)| format!("{}:{}", q, d))
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!("[Bilibili] qn_map for room {} => [{}]", room_id, qn_str);
-    } else {
-        eprintln!("[Bilibili] qn_map is empty for room {}", room_id);
-    }
-    if !accept_qn.is_empty() {
-        let accept_str = accept_qn
-            .iter()
-            .map(|q| q.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        eprintln!("[Bilibili] accept_qn => [{}]", accept_str);
-    }
-
-    // Choose qn by desired quality text（更严格的匹配与优先规则）
-    fn match_qn(qn_map: &[(i32, String)], quality: &str) -> Option<i32> {
-        let q = quality.trim();
-        let mut qns: Vec<i32> = qn_map.iter().map(|(qn, _)| *qn).collect();
-        qns.sort();
-        let has = |v: i32| qns.binary_search(&v).is_ok();
-
-        match q {
-            "原画" => {
-                if has(10000) {
-                    Some(10000)
-                } else {
-                    qns.last().copied()
-                }
-            }
-            "高清" => {
-                // 优先固定值 400；否则按描述关键字匹配（高清/超清/HD）；再兜底选择次高值
-                if has(400) {
-                    return Some(400);
-                }
-                for (qn, desc) in qn_map.iter() {
-                    if desc.contains("高清") || desc.contains("超清") || desc.contains("HD") {
-                        return Some(*qn);
-                    }
-                }
-                // 兜底：选择小于最大值的次高 qn（例如只有 10000 和 250 时，选 250）
-                let max = qns.last().copied();
-                if let Some(m) = max {
-                    qns.into_iter().rev().find(|&x| x < m)
-                } else {
-                    None
-                }
-            }
-            "标清" => {
-                // 优先固定值 250；否则按描述关键字匹配（标清/流畅/SD）；再兜底选择最小值
-                if has(250) {
-                    return Some(250);
-                }
-                for (qn, desc) in qn_map.iter() {
-                    if desc.contains("标清") || desc.contains("流畅") || desc.contains("SD") {
-                        return Some(*qn);
-                    }
-                }
-                qns.first().copied()
-            }
-            _ => {
-                // 未识别文案：兜底最大值
-                qns.last().copied()
-            }
-        }
-    }
-
-    let selected_qn = match_qn(&qn_map, &quality);
-    let selected_desc = selected_qn.and_then(|qn| {
-        qn_map
-            .iter()
-            .find(|(q, _)| *q == qn)
-            .map(|(_, d)| d.clone())
-    });
-    eprintln!(
-        "[Bilibili] selected quality '{}' -> qn={:?}, desc={:?}",
-        quality, selected_qn, selected_desc
-    );
 
     // Determine live status from room_init
     let room_init_url = format!(
@@ -254,6 +144,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
             title: init_json["data"]["title"].as_str().map(|s| s.to_string()),
             anchor_name: init_json["data"]["uname"].as_str().map(|s| s.to_string()),
             avatar: None,
+            cover_url: None,
             stream_url: None,
             status: Some(0),
             error_message: None,
@@ -271,10 +162,11 @@ pub async fn get_bilibili_live_stream_url_with_quality(
 
     fn parse_stream_variants(
         playurl: &Value,
-        selected_desc: &Option<String>,
-        selected_qn: Option<i32>,
+        requested_qn: Option<i32>,
+
     ) -> (Vec<StreamVariant>, Option<String>, Vec<String>) {
         let mut variants: Vec<StreamVariant> = Vec::new();
+        let best_qn = super::quality_policy::best_returned_qn(playurl);
         let mut hls_candidates: Vec<String> = Vec::new();
         let mut flv_candidate: Option<String> = None;
 
@@ -293,6 +185,10 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                             .unwrap_or("");
                         if let Some(codecs) = format_item.get("codec").and_then(|v| v.as_array()) {
                             for codec_item in codecs {
+                                let actual_qn = codec_item["current_qn"].as_i64().map(|q| q as i32);
+                                // Transport preference must never beat actual picture quality.
+                                if actual_qn != best_qn { continue; }
+                                let actual_desc = actual_qn.map(|q| super::quality_policy::quality_desc(playurl, q));
                                 let base_url = codec_item
                                     .get("base_url")
                                     .and_then(|v| v.as_str())
@@ -310,11 +206,12 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                                             continue;
                                         }
 
-                                        variants.push(StreamVariant {
+                                        variants.push(StreamVariant { fps: None, codec: Some("avc1".into()),
+                                            requested_qn,
                                             url: composed.clone(),
                                             format: Some(format_name.to_string()),
-                                            desc: selected_desc.clone(),
-                                            qn: selected_qn,
+                                            desc: actual_desc.clone(),
+                                            qn: actual_qn,
                                             protocol: if protocol_name.is_empty() {
                                                 None
                                             } else {
@@ -385,15 +282,58 @@ pub async fn get_bilibili_live_stream_url_with_quality(
     let mut fallback_hls_url: Option<String> = None;
     let mut fallback_variants: Option<Vec<StreamVariant>> = None;
 
+    // The gateway exposes an HLS master with actual resolution and quality metadata.
+    // Use its selected media playlist directly: adaptive playback must not downgrade it.
+    let normalized_room = init_json["data"]["room_id"].as_u64().map(|n| n.to_string()).unwrap_or_else(|| room_id.clone());
+    let gateway = async {
+        let response = client.get("https://api.live.bilibili.com/xlive/play-gateway/master/url")
+            .query(&[("cid", normalized_room.as_str()), ("mid", "0"), ("pt", "web"),
+                ("p2p_type", "-1"), ("net", "0"), ("free_type", "0"), ("build", "0"),
+                ("feature", "2"), ("qn", "10000"), ("drm_type", "0"), ("codec", "0,1")])
+            .timeout(std::time::Duration::from_secs(8)).send().await.ok()?.error_for_status().ok()?;
+        let text = response.text().await.ok()?;
+        let mut candidates = super::master_playlist::parse(&text, &quality);
+        if !candidates.is_empty() {
+            let offset = route.unwrap_or(0) % candidates.len();
+            candidates.rotate_left(offset);
+        }
+        for candidate in candidates.iter().take(3) {
+            let response = match client.get(&candidate.url).timeout(std::time::Duration::from_secs(4)).send().await {
+                Ok(r) if r.status().is_success() => r,
+                _ => continue,
+            };
+            let media = match response.text().await { Ok(t) => t, Err(_) => continue };
+            if !media.trim_start().starts_with("#EXTM3U") || !media.contains("#EXTINF:") { continue; }
+            return Some((candidate.clone(), candidates));
+        }
+        None
+    };
+    if let Ok(Some((selected, candidates))) = tokio::time::timeout(std::time::Duration::from_secs(18), gateway).await {
+        eprintln!("[Bilibili] gateway selected {} (qn={})", selected.label, selected.qn);
+        variants_for_response = candidates.into_iter().map(|v| StreamVariant { fps: v.fps, codec: v.codec,
+            url: v.url, format: Some("fmp4".into()), desc: Some(v.label),
+            qn: Some(v.qn), requested_qn: Some(v.qn), protocol: Some("http_hls".into()),
+        }).collect();
+        selected_stream = Some(SelectedStream::Hls(selected.url));
+    }
+    let selected_qn = if selected_stream.is_none() {
+        let playinfo = request_playinfo(&client, &room_id, Some(10000)).await?;
+        Some(super::quality_policy::select_qn(&playinfo["data"]["playurl_info"]["playurl"], &quality))
+    } else { None };
+
     for attempt in 0..=MAX_HLS_RETRY {
+        if selected_stream.is_some() { break; }
         let attempt_display = attempt + 1;
         let playinfo_attempt = request_playinfo(&client, &room_id, selected_qn).await?;
         let playurl_attempt = playinfo_attempt["data"]["playurl_info"]["playurl"].clone();
         let (variants, flv_candidate, hls_candidates) =
-            parse_stream_variants(&playurl_attempt, &selected_desc, selected_qn);
+            parse_stream_variants(&playurl_attempt, selected_qn);
 
         variants_for_response = variants.clone();
 
+        let best_qn = variants.iter().filter_map(|v| v.qn).max();
+        let same_quality_flv: Vec<_> = variants.iter().filter(|v| v.qn == best_qn && v.format.as_deref() == Some("flv")).collect();
+        let flv_candidate = if same_quality_flv.is_empty() { flv_candidate } else { Some(same_quality_flv[route.unwrap_or(0) % same_quality_flv.len()].url.clone()) };
         if let Some(flv_url) = flv_candidate {
             eprintln!(
                 "[Bilibili] Attempt {} obtained FLV stream for room {}, stop retrying",
@@ -477,6 +417,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                 title: init_json["data"]["title"].as_str().map(|s| s.to_string()),
                 anchor_name: init_json["data"]["uname"].as_str().map(|s| s.to_string()),
                 avatar: None,
+                cover_url: None,
                 stream_url: None,
                 status: Some(2),
                 error_message: Some("未找到可用的直播流地址".to_string()),
@@ -515,6 +456,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                 title: init_json["data"]["title"].as_str().map(|s| s.to_string()),
                 anchor_name: init_json["data"]["uname"].as_str().map(|s| s.to_string()),
                 avatar: None,
+                cover_url: None,
                 stream_url: proxied_url,
                 status: Some(if final_error_message.is_some() { 2 } else { 1 }),
                 error_message: final_error_message,
@@ -542,6 +484,7 @@ pub async fn get_bilibili_live_stream_url_with_quality(
                 title: init_json["data"]["title"].as_str().map(|s| s.to_string()),
                 anchor_name: init_json["data"]["uname"].as_str().map(|s| s.to_string()),
                 avatar: None,
+                cover_url: None,
                 stream_url: Some(real_url.clone()),
                 status: Some(1),
                 error_message: None,

@@ -1,7 +1,3 @@
 "use client";
-
-import { DouyuHomePage } from "@/screens/DouyuHomePage";
-
-export default function Page() {
-  return <DouyuHomePage />;
-}
+import { FollowsHomePage } from "@/screens/FollowsHomePage";
+export default function Page() { return <FollowsHomePage />; }

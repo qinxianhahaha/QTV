@@ -8,13 +8,14 @@ export type BilibiliCookieControlsVariant = "player" | "category";
 
 type Props = {
   variant?: BilibiliCookieControlsVariant;
+  autoBootstrap?: boolean;
   onCookieChanged?: (cookie: string | null) => void;
 };
 
 export function BilibiliCookieControls(props: Props) {
   const { variant = "player", onCookieChanged } = props;
   const { hasRequired, isLoggingIn, error, login, logout } = useBilibiliCookie({
-    autoBootstrap: true,
+    autoBootstrap: props.autoBootstrap ?? true,
     onChanged: onCookieChanged
   });
 

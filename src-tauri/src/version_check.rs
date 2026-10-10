@@ -9,7 +9,6 @@ pub struct RemoteVersionInfo {
     pub url: Option<String>,
     pub published_at: Option<String>,
 }
-
 #[derive(Debug, Clone, Serialize)]
 pub struct VersionCheckResponse {
     pub local_version: String,
@@ -17,51 +16,26 @@ pub struct VersionCheckResponse {
     pub has_update: bool,
 }
 
-fn parse_semver_parts(v: &str) -> [i32; 3] {
-    let cleaned = v.trim().trim_start_matches(['v', 'V']);
-    let mut out = [0_i32; 3];
-    for (idx, part) in cleaned.split('.').take(3).enumerate() {
-        out[idx] = part.parse::<i32>().unwrap_or(0);
-    }
-    out
-}
-
-fn is_remote_newer(remote: &str, local: &str) -> bool {
-    let r = parse_semver_parts(remote);
-    let l = parse_semver_parts(local);
-    r > l
-}
-
+// Informational only: QTV never installs updates from the former DTV endpoint.
 #[tauri::command]
-pub async fn check_version_cmd(
-    app_handle: tauri::AppHandle,
-    client: State<'_, reqwest::Client>,
-) -> Result<VersionCheckResponse, String> {
+pub async fn check_version_cmd(app_handle: tauri::AppHandle, client: State<'_, reqwest::Client>) -> Result<VersionCheckResponse, String> {
     let local_version = app_handle.package_info().version.to_string();
-
-    // Not critical: if it fails, do not retry and do not error.
-    let remote: Option<RemoteVersionInfo> = match client
-        .get("https://dtv-version.c-zeong.workers.dev/")
-        .header("Accept", "application/json")
-        .send()
-        .await
-    {
-        Ok(resp) if resp.status().is_success() => match resp.json::<RemoteVersionInfo>().await {
-            Ok(v) if !v.version.trim().is_empty() => Some(v),
-            _ => None,
-        },
-        _ => None,
+    let remote = async {
+        let response = client.get("https://api.github.com/repos/qinxianhahaha/QTV/releases/latest")
+            .header("Accept", "application/vnd.github+json").header("User-Agent", "QTV")
+            .timeout(std::time::Duration::from_secs(8)).send().await.ok()?.error_for_status().ok()?;
+        let data: serde_json::Value = response.json().await.ok()?;
+        Some(RemoteVersionInfo {
+            version: data["tag_name"].as_str()?.trim_start_matches('v').to_owned(),
+            title: data["name"].as_str().map(str::to_owned), notes: None,
+            url: Some("https://github.com/qinxianhahaha/QTV/releases/latest".into()),
+            published_at: data["published_at"].as_str().map(str::to_owned),
+        })
+    }.await;
+    let parse = |v: &str| -> Option<Vec<u64>> {
+        let parts: Vec<u64> = v.split('.').map(str::parse).collect::<Result<_, _>>().ok()?;
+        (parts.len() == 3).then_some(parts)
     };
-
-    let has_update = remote
-        .as_ref()
-        .map(|r| is_remote_newer(&r.version, &local_version))
-        .unwrap_or(false);
-
-    Ok(VersionCheckResponse {
-        local_version,
-        remote,
-        has_update,
-    })
+    let has_update = remote.as_ref().and_then(|r| Some(parse(&r.version)? > parse(&local_version)?)).unwrap_or(false);
+    Ok(VersionCheckResponse { local_version, remote, has_update })
 }
-

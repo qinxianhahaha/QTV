@@ -1,0 +1,95 @@
+name: macOS packages
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: aarch64
+            mach: arm64
+          - runner: macos-15-intel
+            arch: x64
+            mach: x86_64
+    runs-on: ${{ matrix.runner }}
+    env:
+      MACOSX_DEPLOYMENT_TARGET: '12.0'
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
+        with:
+          version: 11.7.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
+        with:
+          toolchain: nightly
+      - uses: swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
+        with:
+          workspaces: src-tauri -> target
+      - run: brew install protobuf pkg-config
+      - run: pnpm install --frozen-lockfile
+      - name: Verify release version
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAG: ${{ github.ref_name }}
+        run: test "$TAG" = "v$(node -p "require('./package.json').version")"
+      - run: pnpm check
+      - run: pnpm tauri build --bundles app,dmg --ci
+      - name: Verify and package
+        env:
+          ARCH: ${{ matrix.arch }}
+          MACH: ${{ matrix.mach }}
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          python3 scripts/verify-macos-app.py src-tauri/target/release/bundle/macos/QTV.app "$MACH"
+          mkdir -p release
+          cp src-tauri/target/release/bundle/dmg/*.dmg release/
+          ditto -c -k --sequesterRsrc --keepParent src-tauri/target/release/bundle/macos/QTV.app "release/QTV_${version}_${ARCH}.zip"
+          cd release
+          shasum -a 256 *.dmg *.zip > "SHA256SUMS-${ARCH}.txt"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: QTV-${{ matrix.arch }}
+          path: release/*
+  prepare-release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: QTV-*
+          path: release
+          merge-multiple: true
+      - name: Prepare draft and checksums
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" --json isDraft --jq '.isDraft' > /tmp/is-draft; then
+            if [ "$(cat /tmp/is-draft)" != 'true' ]; then
+              echo 'Already published; keeping released assets and their checksums immutable.'
+              exit 0
+            fi
+          else
+            gh release create "$TAG" --draft --title "QTV $TAG" --notes "安装与更新说明见 README 和 CHANGELOG。"
+          fi
+          cd release
+          shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
+          rm SHA256SUMS-aarch64.txt SHA256SUMS-x64.txt
+          gh release upload "$TAG" ./* --clobber

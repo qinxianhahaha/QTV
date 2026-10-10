@@ -267,7 +267,7 @@
 
 :global(:root[data-theme="light"]) .avatar {
   background: rgba(15, 23, 42, 0.04);
-  border: 2px solid rgba(16, 185, 129, 0.3);
+  border: 2px solid var(--accent-glow);
 }
 
 .avatarImg {
@@ -311,11 +311,11 @@
 }
 
 .streamerItem:hover .name {
-  color: rgba(52, 211, 153, 1);
+  color: var(--accent);
 }
 
 :global(:root[data-theme="light"]) .streamerItem:hover .name {
-  color: rgba(16, 185, 129, 1);
+  color: var(--accent);
 }
 
 .sub {
@@ -356,7 +356,7 @@
 }
 
 .liveDotLive {
-  background: #10b981;
+  background: var(--accent);
 }
 
 .liveDotUnknown {
@@ -694,7 +694,7 @@
 .filterChipActive {
   background: var(--accent-gradient);
   border-color: color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
-  color: white;
+  color: var(--accent-text);
 }
 
 :global(:root[data-theme="light"]) .filterChip {
@@ -739,7 +739,7 @@
 .overlayTextBtnActive {
   background: var(--accent-gradient);
   border-color: color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
-  color: white;
+  color: var(--accent-text);
 }
 
 .overlayTextBtnRefreshing .overlaySpinner {
@@ -1007,7 +1007,7 @@
 }
 
 .primaryBtn {
-  color: white;
+  color: var(--accent-text);
   background: var(--accent-gradient);
   border: 1px solid color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
 }

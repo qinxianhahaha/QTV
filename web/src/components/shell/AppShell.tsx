@@ -6,14 +6,13 @@ import { AnimatePresence, m } from "framer-motion";
 import { Spinner } from "@heroui/react";
 
 import styles from "./AppShell.module.css";
-import { Sidebar } from "@/components/shell/Sidebar";
 import { Navbar } from "@/components/shell/Navbar";
 import { useTheme } from "@/state/theme/ThemeProvider";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
 import { useCustomCategories } from "@/state/customCategories/CustomCategoriesProvider";
 import { PlayerOverlayHost, PlayerOverlayProvider, usePlayerOverlay } from "@/state/playerOverlay/PlayerOverlayProvider";
 
-type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom";
+type UiPlatform = "douyu" | "douyin" | "huya" | "bilibili" | "custom" | "follows";
 
 function normalizePathname(pathname: string) {
   const raw = String(pathname || "/");
@@ -23,6 +22,7 @@ function normalizePathname(pathname: string) {
 
 function getActivePlatform(pathname: string): UiPlatform {
   const p = normalizePathname(pathname);
+  if (p === "/") return "follows";
   if (p.startsWith("/custom")) return "custom";
   if (p.startsWith("/douyin")) return "douyin";
   if (p.startsWith("/huya")) return "huya";
@@ -54,7 +54,6 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   const normalizedPathname = useMemo(() => normalizePathname(pathname ?? "/"), [pathname]);
   const activePlatform = useMemo(() => getActivePlatform(normalizedPathname), [normalizedPathname]);
-  const [isSidebarCollapsed] = useState(false);
   const [optimisticPlatform, setOptimisticPlatform] = useState<UiPlatform>(activePlatform);
 
   const playerActive = isPlayerPath(normalizedPathname) || playerOverlay.isOpen;
@@ -78,24 +77,13 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       router.replace("/");
       return;
     }
-
-    // 仅在本次启动首次落到首页时：如果订阅了分区，默认进入自定义分区页
-    if (custom.entries.length > 0 && normalizedPathname === "/") {
-      try {
-        const key = "dtv_initial_route_custom_v1";
-        if (window.sessionStorage.getItem(key) === "1") return;
-        window.sessionStorage.setItem(key, "1");
-      } catch {
-        // ignore
-      }
-      router.replace("/custom/");
-    }
   }, [custom.entries.length, custom.hydrated, normalizedPathname, router]);
 
   const navigatePlatform = useCallback(
     (p: UiPlatform) => {
       const map: Record<UiPlatform, string> = {
-        douyu: "/",
+        follows: "/",
+        douyu: "/douyu/",
         douyin: "/douyin/",
         huya: "/huya/",
         bilibili: "/bilibili/",
@@ -105,13 +93,14 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
       const next = map[p];
       if (!next) return;
 
+      playerOverlay.closePlayer();
       setOptimisticPlatform(p);
       startRouteTransition(() => {
         if (isPlayerPath(pathname ?? "/")) router.replace(next);
         else router.push(next);
       });
     },
-    [pathname, router]
+    [pathname, router, playerOverlay]
   );
 
   useEffect(() => {
@@ -133,11 +122,8 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={styles.appShell}>
-      {!shouldHidePlayerChrome ? (
-        <Sidebar isCollapsed={isSidebarCollapsed} />
-      ) : null}
       <div className={styles.appMain}>
-        {!shouldHidePlayerChrome ? (
+        {!playerActive ? (
           <Navbar
             theme={effectiveTheme}
             activePlatform={optimisticPlatform}
@@ -147,7 +133,7 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
         ) : null}
 
         {hydrated ? (
-          <m.main className={`${styles.appBody} ${playerRoute ? styles.appBodyPlayer : ""}`}>
+          <m.main className={`${styles.appBody} ${playerRoute ? styles.appBodyPlayer : ""}`} inert={playerOverlay.isOpen} aria-hidden={playerOverlay.isOpen}>
             <div className={styles.appBodyContents}>
               <div className={styles.routeScope}>
                 <div className={styles.routePendingWrap}>
@@ -170,7 +156,9 @@ function AppShellInner({ children }: { children: React.ReactNode }) {
                           </m.div>
                         </AnimatePresence>
                       ) : (
-                        children
+                        <div key={normalizedPathname} className={styles.routeFade}>
+                          {children}
+                        </div>
                       )}
                     </div>
                   </div>

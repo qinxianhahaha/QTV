@@ -34,6 +34,7 @@ export interface DanmuOverlayInstance {
   play?: () => void;
   pause?: () => void;
   stop?: () => void;
+  destroy?: () => void;
   start?: () => void;
   hide?: (mode?: string) => void;
   show?: (mode?: string) => void;

@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "DTV",
-  "version": "3.0.3",
-  "identifier": "com.dtv.app",
+  "productName": "QTV",
+  "version": "1.0.0",
+  "identifier": "io.github.qinxianhahaha.qtv",
   "build": {
     "beforeDevCommand": "pnpm -C web dev",
     "devUrl": "http://localhost:2896",
@@ -18,15 +18,17 @@
         "titleBarStyle": "Overlay",
         "decorations": true,
         "trafficLightPosition": {
-          "x": 18,
-          "y": 33
+          "x": 20,
+          "y": 26
         },
         "transparent": false,
         "title": "",
         "fullscreen": false,
         "resizable": true,
-        "width": 1440,
-        "height": 810,
+        "width": 1200,
+        "height": 675,
+        "minWidth": 960,
+        "minHeight": 540,
         "center": true
       }
     ],
@@ -37,13 +39,12 @@
   "plugins": {},
   "bundle": {
     "active": true,
+    "resources": [
+      "resources/*"
+    ],
     "targets": [
       "app",
-      "dmg",
-      "nsis",
-      "msi",
-      "deb",
-      "appimage"
+      "dmg"
     ],
     "icon": [
       "icons/32x32.png",
@@ -52,13 +53,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "windows": {
-      "nsis": {
-        "languages": ["SimpChinese"]
-      },
-      "wix": {
-        "language": ["zh-CN"]
-      }
-    }
+    "macOS": {
+      "minimumSystemVersion": "12.0",
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
+    },
+    "shortDescription": "关注你喜欢的主播",
+    "category": "Entertainment",
+    "copyright": "© 2025 c.zeong; © 2026 QTV contributors"
   }
 }

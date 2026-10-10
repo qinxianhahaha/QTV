@@ -18,7 +18,7 @@ fn is_lan_sync_json_candidate(path: &Path) -> bool {
     if !lower.ends_with(".json") {
         return false;
     }
-    lower.starts_with("dtv-sync")
+    lower.starts_with("qtv-sync") || lower.starts_with("dtv-sync")
 }
 
 fn sanitize_file_name(input: &str) -> String {
@@ -29,7 +29,7 @@ fn sanitize_file_name(input: &str) -> String {
     }
     let trimmed = out.trim_matches(['.', ' ']).to_string();
     if trimmed.is_empty() {
-        "dtv-sync.json".to_string()
+        "qtv-sync.json".to_string()
     } else {
         trimmed
     }
@@ -52,7 +52,7 @@ fn unique_path(mut path: PathBuf) -> PathBuf {
     let stem = path
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "dtv-sync".to_string());
+        .unwrap_or_else(|| "qtv-sync".to_string());
     let ext = path.extension().map(|s| s.to_string_lossy().into_owned());
 
     for idx in 2..=9999 {
@@ -81,7 +81,7 @@ pub fn export_lan_sync_json_to_desktop(
         .desktop_dir()
         .map_err(|e| format!("Failed to resolve desktop dir: {e}"))?;
 
-    let fallback_name = format!("dtv-sync-{}.json", Local::now().format("%Y%m%d-%H%M%S"));
+    let fallback_name = format!("qtv-sync-{}.json", Local::now().format("%Y%m%d-%H%M%S"));
     let raw_name = default_file_name.unwrap_or(fallback_name);
     let file_name = ensure_json_ext(&sanitize_file_name(raw_name.trim()));
 
@@ -93,7 +93,7 @@ pub fn export_lan_sync_json_to_desktop(
 #[tauri::command]
 pub fn pick_lan_sync_json_import(app: tauri::AppHandle) -> Result<Option<ImportedJsonFile>, String> {
     let desktop = app.path().desktop_dir().ok();
-    let mut dialog = rfd::FileDialog::new().add_filter("DTV Sync", &["json"]);
+    let mut dialog = rfd::FileDialog::new().add_filter("QTV Sync", &["json"]);
     if let Some(dir) = desktop {
         dialog = dialog.set_directory(dir);
     }

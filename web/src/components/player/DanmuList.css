@@ -10,7 +10,7 @@
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   color: var(--primary-text, #e5e9f5);
-  font-family: var(--danmu-font-family, "OPPO Sans", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif);
+  font-family: var(--danmu-font-family, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif);
   border-radius: 0 16px 16px 0;
   border: 1px solid var(--glass-border);
   border-left: none;
@@ -219,8 +219,8 @@
 }
 
 .system-message {
-  background: rgba(99, 102, 241, 0.14);
-  border-color: rgba(99, 102, 241, 0.22);
+  background: rgba(148, 163, 184, 0.14);
+  border-color: rgba(148, 163, 184, 0.22);
 }
 
 :root[data-theme="light"] .danmu-item {
@@ -242,8 +242,8 @@
 }
 
 :root[data-theme="light"] .system-message {
-  background: rgba(99, 102, 241, 0.1);
-  border-color: rgba(99, 102, 241, 0.18);
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.18);
 }
 
 :root[data-theme="light"] .danmu-filter-panel {

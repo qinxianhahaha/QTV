@@ -55,13 +55,15 @@ export function CustomCategoriesProvider({ children }: { children: React.ReactNo
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    setEntries(loadEntries());
-    setHydrated(true);
+    const restore = () => { setEntries(loadEntries()); setHydrated(true); };
+    restore();
+    window.addEventListener("dtv-config-imported", restore);
+    return () => window.removeEventListener("dtv-config-imported", restore);
   }, []);
 
   useEffect(() => {
-    persistEntries(entries);
-  }, [entries]);
+    if (hydrated) persistEntries(entries);
+  }, [entries, hydrated]);
 
   const value = useMemo<CustomCategoriesContextValue>(() => {
     return {

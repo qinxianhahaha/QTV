@@ -1,6 +1,6 @@
 "use client";
 
-export const LAN_SYNC_KIND = "dtv-lan-sync" as const;
+export const LAN_SYNC_KIND = "qtv-lan-sync" as const;
 export const LAN_SYNC_VERSION = 1 as const;
 
 export const LAN_SYNC_KEYS = [
@@ -115,7 +115,7 @@ export function parseLanSyncManifest(raw: unknown): LanSyncManifest {
   // Compatibility: some clients (e.g. older/mobile builds) omit kind/version fields.
   const kind = typeof raw.kind === "string" ? raw.kind : null;
   const version = typeof raw.version === "number" ? raw.version : null;
-  if (kind && kind !== LAN_SYNC_KIND) throw new Error("This is not a DTV LAN sync export.");
+  if (kind && kind !== LAN_SYNC_KIND && kind !== "dtv-lan-sync") throw new Error("This is not a QTV/DTV LAN sync export.");
   if (version != null && version !== LAN_SYNC_VERSION) throw new Error(`Unsupported sync version: ${String(raw.version)}.`);
 
   if (typeof raw.exportedAt !== "string" || Number.isNaN(Date.parse(raw.exportedAt))) throw new Error("Manifest exportedAt is invalid.");
@@ -149,7 +149,7 @@ export function parseLanSyncPayload(raw: unknown): LanSyncPayload {
   // Compatibility: some clients (e.g. older/mobile builds) omit kind/version fields.
   const kind = typeof raw.kind === "string" ? raw.kind : null;
   const version = typeof raw.version === "number" ? raw.version : null;
-  if (kind && kind !== LAN_SYNC_KIND) throw new Error("This is not a DTV LAN sync export.");
+  if (kind && kind !== LAN_SYNC_KIND && kind !== "dtv-lan-sync") throw new Error("This is not a QTV/DTV LAN sync export.");
   if (version != null && version !== LAN_SYNC_VERSION) throw new Error(`Unsupported sync version: ${String(raw.version)}.`);
 
   if (typeof raw.exportedAt !== "string" || Number.isNaN(Date.parse(raw.exportedAt))) throw new Error("Payload exportedAt is invalid.");
@@ -178,6 +178,7 @@ export function parseLanSyncPayload(raw: unknown): LanSyncPayload {
 type FollowPlatform = "DOUYU" | "DOUYIN" | "HUYA" | "BILIBILI";
 
 type FollowedStreamer = {
+  hidden?: boolean;
   id: string;
   platform: FollowPlatform;
   nickname: string;
@@ -281,11 +282,12 @@ export function applyIncrementalLanSyncImport(storage: Storage, remoteEntries: P
     streamerByKey.set(key, {
       id: sid,
       platform: p,
-      nickname: streamer?.nickname ?? sid,
-      avatarUrl: streamer?.avatarUrl ?? "",
-      roomTitle: streamer?.roomTitle ?? "",
-      currentRoomId: streamer?.currentRoomId ?? sid,
-      liveStatus: streamer?.liveStatus ?? "UNKNOWN"
+      nickname: typeof streamer?.nickname === "string" ? streamer.nickname : sid,
+      avatarUrl: typeof streamer?.avatarUrl === "string" ? streamer.avatarUrl : "",
+      roomTitle: typeof streamer?.roomTitle === "string" ? streamer.roomTitle : "",
+      currentRoomId: typeof streamer?.currentRoomId === "string" ? streamer.currentRoomId : sid,
+      hidden: streamer?.hidden === true,
+      liveStatus: "UNKNOWN"
     });
     addedStreamers += 1;
   };

@@ -122,7 +122,7 @@
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   transition: all 0.3s ease;
-  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
 }
 
 .danmu-control-group {
@@ -277,7 +277,7 @@
     -1px 1px 0 var(--danmu-stroke-color, #444444),
     1px -1px 0 var(--danmu-stroke-color, #444444),
     -1px -1px 0 var(--danmu-stroke-color, #444444);
-  font-family: var(--danmu-font-family, "OPPO Sans", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif);
+  font-family: var(--danmu-font-family, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif);
 }
 
 @keyframes player-control-spin {
@@ -1103,7 +1103,7 @@
 }
 
 .cookie-configured {
-  color: var(--success-color, #22c55e);
+  color: var(--success-color, #e5e7eb);
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1178,8 +1178,8 @@
   height: 34px;
   padding: 0 14px;
   border-radius: 12px;
-  border: 1px solid rgba(16, 185, 129, 0.32);
-  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  background: rgba(255, 255, 255, 0.14);
   backdrop-filter: blur(10px) saturate(1.08);
   -webkit-backdrop-filter: blur(10px) saturate(1.08);
   color: rgba(244, 247, 255, 0.92);
@@ -1189,8 +1189,8 @@
 }
 
 .follow-btn:hover {
-  background: rgba(16, 185, 129, 0.18);
-  border-color: rgba(16, 185, 129, 0.42);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.42);
 }
 
 .follow-btn.is-following {
@@ -1204,13 +1204,13 @@
 
 :root[data-theme="light"] .follow-btn {
   color: rgba(15, 23, 42, 0.92);
-  background: rgba(16, 185, 129, 0.12);
-  border-color: rgba(16, 185, 129, 0.36);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.36);
 }
 
 :root[data-theme="light"] .follow-btn:hover {
-  background: rgba(16, 185, 129, 0.16);
-  border-color: rgba(16, 185, 129, 0.46);
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.46);
 }
 
 :root[data-theme="light"] .follow-btn.is-following {
@@ -1446,8 +1446,10 @@ html.web-fs-active .danmu-panel {
   z-index: 260;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: center;
+  /* Equal safe areas keep the group centered in the video, while leaving room
+     for native traffic lights and both mini-window actions at either edge. */
+  padding-inline: 84px;
   pointer-events: none;
   opacity: 1;
   transform: translateY(0);
@@ -1456,24 +1458,36 @@ html.web-fs-active .danmu-panel {
     transform 220ms var(--ease-out);
 }
 
+/* macOS: keep the close button and streamer pill clear of the traffic lights. */
+:root[data-os="mac"] .player-topbar {
+  top: 10px;
+}
+
+:root[data-os="mac"] .video-container:has(.xgplayer-is-fullscreen, .xgplayer-is-cssfullscreen) .player-topbar {
+  left: 12px;
+}
+
 .player-topbar > * {
   pointer-events: auto;
 }
 
-.player-topbar-left {
+.player-topbar-center {
   display: flex;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
   gap: 12px;
   min-width: 0;
+  max-width: min(760px, 100%);
+  flex: 0 1 auto;
 }
 
-.player-topbar-left .player-close-btn {
+.player-topbar-center .player-close-btn {
   flex: 0 0 auto;
 }
 
-.player-topbar-left .player-topbar-streamer {
-  max-width: min(62vw, 720px);
+.player-topbar-center .player-topbar-streamer {
+  flex: 0 1 auto;
+  overflow: hidden;
   min-width: 0;
 }
 
@@ -1548,7 +1562,7 @@ html.web-fs-active .danmu-panel {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 48vw;
+  max-width: 100%;
 }
 
 :root[data-theme="light"] .player-topbar-title {
@@ -1563,7 +1577,7 @@ html.web-fs-active .danmu-panel {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 48vw;
+  max-width: 100%;
 }
 
 :root[data-theme="light"] .player-topbar-sub {
@@ -1577,9 +1591,9 @@ html.web-fs-active .danmu-panel {
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.02em;
-  background: rgba(34, 197, 94, 0.16);
-  border: 1px solid rgba(34, 197, 94, 0.34);
-  color: rgba(219, 255, 235, 0.95);
+  background: rgba(244, 63, 94, 0.18);
+  border: 1px solid rgba(244, 63, 94, 0.36);
+  color: rgba(255, 228, 232, 0.95);
 }
 
 .player-topbar-status.is-offline {
@@ -1612,9 +1626,9 @@ html.web-fs-active .danmu-panel {
 }
 
 .player-topbar-follow.is-following {
-  background: rgba(34, 197, 94, 0.16);
-  border-color: rgba(34, 197, 94, 0.34);
-  color: rgba(219, 255, 235, 0.95);
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.24);
+  color: rgba(255, 255, 255, 0.95);
 }
 
 .player-topbar-right {
@@ -2430,4 +2444,64 @@ video.xgplayer-video {
 
 :root[data-theme="light"] .streamer-info-offline {
   border-bottom: 1px solid var(--border-color-light, #e0e0e0);
+}
+
+/* A borderless playback window; the home window regains its native controls on exit. */
+.player-page .player-container { min-height: 0; border: 0; border-radius: 0; }
+.floating-actions {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  display: flex; gap: 6px;
+}
+.floating-actions button {
+  width: 36px; height: 36px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(20,20,22,.75); color: #fff; border: 1px solid rgba(255,255,255,.25);
+}
+.floating-actions button[aria-pressed="true"] { background: #eee; color: #18181b; }
+.floating-actions button:disabled { opacity: .45; }
+.floating-actions span {
+  position: absolute; right: 0; top: calc(100% + 8px);
+  width: max-content; max-width: min(320px, calc(100vw - 24px));
+  padding: 6px 8px; border-radius: 8px;
+  color: #fff; font-size: 12px; background: #222;
+}
+.player-page.player-chrome-hidden .player-topbar { visibility: hidden; }
+.player-page.player-chrome-hidden .player-topbar *,
+.player-page.player-chrome-hidden .player-window-controls { pointer-events: none; }
+.player-page.player-chrome-hidden .player-window-controls { opacity: 0; visibility: hidden; }
+.player-page.player-chrome-hidden .video-container { cursor: none; }
+@media (max-width: 760px) {
+  .player-topbar-status, .player-topbar-follow { display: none; }
+  .player-topbar-streamer { padding: 5px 8px; border-radius: 12px; }
+  .player-topbar-avatar { display: none; }
+  .player-topbar-center { gap: 6px; }
+  .player-topbar-center .player-close-btn { width: 36px; height: 36px; }
+  .player-page .xgplayer-controls { padding-left: 6px; padding-right: 6px; gap: 2px; }
+}
+
+.player-topbar-center .player-close-btn { top: 0; left: 0; }
+.player-page .video-container { min-height: 0; border-radius: 0; }
+
+/* Let 16:9 mini windows shrink below the legacy 320px video minimum. */
+.player-page .video-player { min-height: 0; }
+
+.bilibili-quality-notice { position: absolute; z-index: 25; top: 86px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px 12px; border-radius: 12px; color: #eee; background: rgba(20,20,20,.86); font-size: 12px; }
+.player-chrome-hidden .bilibili-quality-notice { opacity: 0; pointer-events: none; }
+
+.playback-info { position: absolute; z-index: 26; top: 76px; right: 16px; color: #eee; }
+.playback-info summary { list-style: none; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; border: 1px solid #ffffff30; border-radius: 9px; background: #18181bd9; cursor: pointer; }
+.playback-info summary::-webkit-details-marker { display: none; }
+.playback-info summary:focus-visible { outline: 2px solid #c8cdd5; outline-offset: 3px; }
+.playback-info-panel { position: absolute; top: 38px; right: 0; width: min(270px, calc(100vw - 32px)); max-height: calc(100vh - 170px); overflow: auto; padding: 14px; border: 1px solid #ffffff26; border-radius: 12px; background: #18181bf5; box-shadow: 0 8px 28px #0006; font-size: 12px; }
+.playback-info-panel strong { display: block; margin-bottom: 10px; font-size: 13px; }
+.playback-info-panel dl { margin: 0; }
+.playback-info-panel dl > div { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.playback-info-panel dt { color: #b5b5bc; flex-shrink: 0; }
+.playback-info-panel dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.playback-info-panel p { margin: 10px 0 0; color: #a1a1aa; line-height: 1.5; }
+.player-chrome-hidden .playback-info { visibility: hidden; pointer-events: none; }
+.playback-recovery { position: absolute; z-index: 24; bottom: 72px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 9px 14px; border-radius: 10px; background: #18181be6; color: #eee; font-size: 13px; text-align: center; pointer-events: none; }
+@media (max-width: 760px) {
+  .playback-info { top: 60px; right: 10px; }
+  .playback-info-panel { max-height: calc(100vh - 154px); }
 }

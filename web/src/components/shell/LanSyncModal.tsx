@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { AnimatePresence, m } from "framer-motion";
 import { Download, Upload, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -13,7 +14,7 @@ type ServerInfo = { port: number; hosts: string[]; token: string };
 type DiscoveredPeer = { name: string; host: string; port: number; token?: string | null; baseUrl: string };
 
 const FIXED_PORT = 38999;
-const DEFAULT_TOKEN = "dtv";
+const DEFAULT_TOKEN = "";
 
 function pickBestLanHost(hosts: string[]): string | null {
   const ips = (hosts || [])
@@ -72,45 +73,6 @@ function normalizeImportTarget(input: string, fallbackToken: string): { baseUrl:
   return { baseUrl, token: fallbackToken };
 }
 
-function normalizeDiscoveredToken(raw: unknown, fallbackToken: string): string {
-  const trimmed = String(raw ?? "").trim();
-  if (!trimmed) return fallbackToken;
-
-  // Some peers may accidentally advertise txt like "token=dtv"; normalize to "dtv".
-  if (trimmed.includes("token=")) {
-    try {
-      const params = new URLSearchParams(trimmed.startsWith("?") ? trimmed.slice(1) : trimmed);
-      const t = params.get("token");
-      if (t) return t;
-    } catch {
-      // ignore
-    }
-    const idx = trimmed.lastIndexOf("token=");
-    if (idx >= 0) {
-      const maybe = trimmed.slice(idx + "token=".length);
-      if (maybe) return decodeURIComponent(maybe);
-    }
-  }
-
-  return trimmed;
-}
-
-async function fetchJsonWithTimeout(url: string, timeoutMs: number) {
-  const controller = new AbortController();
-  const id = window.setTimeout(() => controller.abort(), Math.max(200, timeoutMs));
-  try {
-    const res = await fetch(url, {
-      method: "GET",
-      signal: controller.signal,
-      cache: "no-store",
-      headers: { Accept: "application/json" }
-    });
-    return res;
-  } finally {
-    window.clearTimeout(id);
-  }
-}
-
 export function LanSyncModal({
   open,
   onClose,
@@ -120,6 +82,9 @@ export function LanSyncModal({
   onClose: () => void;
   appVersion?: string;
 }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   const [tab, setTab] = useState<"export" | "import">("export");
 
   const [serverInfo, setServerInfo] = useState<ServerInfo | null>(null);
@@ -130,6 +95,14 @@ export function LanSyncModal({
   const [jsonExportPath, setJsonExportPath] = useState<string | null>(null);
 
   const [manualTarget, setManualTarget] = useState("");
+  const [pairingCode, setPairingCode] = useState("");
+  const openRef = useRef(open);
+  openRef.current = open;
+
+  useEffect(() => {
+    if (!open) return;
+    return () => { void invoke("lan_sync_stop_server").catch(() => {}); };
+  }, [open]);
   const [importBusy, setImportBusy] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importResult, setImportResult] = useState<string | null>(null);
@@ -163,6 +136,7 @@ export function LanSyncModal({
     setImportError(null);
     setImportResult(null);
     setManualTarget("");
+    setPairingCode("");
 
     void (async () => {
       try {
@@ -173,6 +147,22 @@ export function LanSyncModal({
         setServerInfo(null);
       }
     })();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    dialogRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onCloseRef.current(); return; }
+      if (event.key !== "Tab") return;
+      const elements = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), [tabindex="0"]') || []);
+      const first = elements[0]; const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown, true);
+    return () => { document.removeEventListener("keydown", onKeyDown, true); previousFocus?.focus(); };
   }, [open]);
 
   const stopShare = useCallback(async () => {
@@ -196,7 +186,8 @@ export function LanSyncModal({
     try {
       const payload = createLanSyncPayload(window.localStorage, { client: "desktop", appVersion: appVersion || null });
       const res = (await invoke<any>("lan_sync_start_server", { payload })) as ServerInfo;
-      setServerInfo(res);
+      if (openRef.current) setServerInfo(res);
+      else await invoke("lan_sync_stop_server");
     } catch (e) {
       setExportError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -237,6 +228,7 @@ export function LanSyncModal({
 
       const payload = parseLanSyncPayload(JSON.parse(picked.content));
       const result = applyIncrementalLanSyncImport(window.localStorage, payload.entries);
+      window.dispatchEvent(new Event("dtv-config-imported"));
       const extraParts: string[] = [];
       if (typeof result.addedCustomCategories === "number") extraParts.push(`自定义分区新增 ${result.addedCustomCategories}`);
       if (typeof result.addedDanmuBlockKeywords === "number") extraParts.push(`弹幕屏蔽词新增 ${result.addedDanmuBlockKeywords}`);
@@ -260,6 +252,7 @@ export function LanSyncModal({
     setImportResult("正在搜索可用共享端…");
 
     try {
+      if (!pairingCode.trim()) throw new Error("请输入共享端显示的配对码，或在下方粘贴完整共享链接。");
       const peers = (await invoke<any>("lan_sync_discover", { timeoutMs: 1600 })) as DiscoveredPeer[];
       if (!Array.isArray(peers) || peers.length === 0) {
         throw new Error("未发现可用共享端：请先在另一台设备点击「开启共享」。");
@@ -271,7 +264,7 @@ export function LanSyncModal({
       const settled = await Promise.allSettled(
         peers.map(async (peer) => {
           if (!peer?.baseUrl) throw new Error("Peer baseUrl is empty.");
-          const token = normalizeDiscoveredToken(peer.token, DEFAULT_TOKEN);
+          const token = pairingCode.trim();
           const manifest = (await invoke<any>("lan_sync_fetch_manifest", { baseUrl: peer.baseUrl, token })) as any;
           const parsed = parseLanSyncManifest(manifest);
           const exportedAt = Date.parse(parsed.exportedAt);
@@ -303,6 +296,7 @@ export function LanSyncModal({
       const payloadRaw = (await invoke<any>("lan_sync_fetch_payload", { baseUrl: best.peer.baseUrl, token: best.token })) as any;
       const payload = parseLanSyncPayload(payloadRaw);
       const result = applyIncrementalLanSyncImport(window.localStorage, payload.entries);
+      window.dispatchEvent(new Event("dtv-config-imported"));
 
       const extraParts: string[] = [];
       extraParts.push(`自定义分区新增 ${result.addedCustomCategories}`);
@@ -319,7 +313,7 @@ export function LanSyncModal({
     } finally {
       setImportBusy(false);
     }
-  }, [canUseStorage]);
+  }, [canUseStorage, pairingCode]);
 
   const confirmImport = useCallback(async () => {
     if (!canUseStorage) return;
@@ -327,10 +321,11 @@ export function LanSyncModal({
     setImportError(null);
     setImportResult(null);
     try {
-      const { baseUrl, token } = normalizeImportTarget(manualTarget, DEFAULT_TOKEN);
+      const { baseUrl, token } = normalizeImportTarget(manualTarget, pairingCode.trim());
       const payloadRaw = (await invoke<any>("lan_sync_fetch_payload", { baseUrl, token })) as any;
       const payload = parseLanSyncPayload(payloadRaw);
       const result = applyIncrementalLanSyncImport(window.localStorage, payload.entries);
+      window.dispatchEvent(new Event("dtv-config-imported"));
       const extraParts: string[] = [];
       if (typeof result.addedCustomCategories === "number") extraParts.push(`自定义分区新增 ${result.addedCustomCategories}`);
       if (typeof result.addedDanmuBlockKeywords === "number") extraParts.push(`弹幕屏蔽词新增 ${result.addedDanmuBlockKeywords}`);
@@ -344,7 +339,7 @@ export function LanSyncModal({
     } finally {
       setImportBusy(false);
     }
-  }, [canUseStorage, manualTarget]);
+  }, [canUseStorage, manualTarget, pairingCode]);
 
   const close = useCallback(() => {
     setExportError(null);
@@ -355,7 +350,7 @@ export function LanSyncModal({
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
       <m.div
         className={styles.overlayBackdrop}
@@ -368,6 +363,10 @@ export function LanSyncModal({
       >
         <m.div
           className={styles.overlayCard}
+          ref={dialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="数据同步"
           initial={{ opacity: 0, y: 10, scale: 0.985 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: 0.99 }}
@@ -376,16 +375,17 @@ export function LanSyncModal({
         >
           <div className={styles.overlayHeader}>
             <div className={styles.overlayTitle}>数据同步</div>
-            <button type="button" className={`${styles.overlayClose} ${styles.syncBtnGlass}`} onClick={() => close()} aria-label="关闭">
+            <button type="button" className={styles.overlayClose} onClick={() => close()} aria-label="关闭">
               <X size={16} />
             </button>
           </div>
 
           <div className={styles.overlayBody}>
-            <div className={styles.syncTabs} aria-label="sync tabs">
+            <div className={styles.syncTabs} aria-label="导入或导出">
               <button
                 type="button"
-                className={`${styles.syncTab} ${styles.syncBtnGlass} ${tab === "export" ? styles.syncTabActive : ""}`}
+                className={`${styles.syncTab} ${tab === "export" ? styles.syncTabActive : ""}`}
+                aria-pressed={tab === "export"}
                 onClick={() => setTab("export")}
               >
                 <Upload size={16} />
@@ -393,7 +393,8 @@ export function LanSyncModal({
               </button>
               <button
                 type="button"
-                className={`${styles.syncTab} ${styles.syncBtnGlass} ${tab === "import" ? styles.syncTabActive : ""}`}
+                className={`${styles.syncTab} ${tab === "import" ? styles.syncTabActive : ""}`}
+                aria-pressed={tab === "import"}
                 onClick={() => setTab("import")}
               >
                 <Download size={16} />
@@ -401,6 +402,7 @@ export function LanSyncModal({
               </button>
             </div>
 
+            <p className={styles.syncHint}>{tab === "export" ? "导出关注和设置到桌面，或在局域网内共享。" : "选择 JSON 备份文件，导入内容将与现有关注合并。"}</p>
             {tab === "export" ? (
               <>
                 {serverInfo?.hosts?.length && shareImportUrl ? (
@@ -431,6 +433,13 @@ export function LanSyncModal({
                   </div>
                 ) : null}
 
+                {serverInfo && shareImportUrl ? (
+                  <div className={styles.syncField}>
+                    <label>配对码<input className={styles.syncInput} value={serverInfo.token} readOnly onFocus={(e) => e.target.select()} /></label>
+                    <label>共享链接<input className={styles.syncInput} value={shareImportUrl} readOnly onFocus={(e) => e.target.select()} /></label>
+                    <p className={styles.syncHint}>仅在可信局域网使用。关闭此窗口即结束共享；每次开启生成新的配对码。</p>
+                  </div>
+                ) : null}
                 {jsonExportError ? (
                   <p className={styles.syncHint} style={{ color: "rgba(239, 68, 68, 0.95)" }}>
                     {jsonExportError}
@@ -444,7 +453,7 @@ export function LanSyncModal({
                 ) : null}
 
                 {jsonExportPath ? (
-                  <p className={styles.syncHint} style={{ color: "rgba(34, 197, 94, 0.95)" }}>
+                  <p className={styles.syncHint} style={{ color: "var(--accent)" }}>
                     导出成功：已导出到桌面。文件：{jsonExportPath}
                   </p>
                 ) : null}
@@ -452,17 +461,17 @@ export function LanSyncModal({
                 <div className={styles.syncActionsRow}>
                   <button
                     type="button"
-                    className={`${styles.secondaryBtn} ${styles.syncBigBtn} ${styles.syncBtnGlass}`}
+                    className={`${styles.secondaryBtn} ${styles.syncBigBtn}`}
                     onClick={() => void exportToDesktopJson()}
                     disabled={jsonExportBusy || !canUseStorage}
                   >
-                    导出 JSON
+                    {jsonExportBusy ? "正在导出…" : "导出 JSON"}
                   </button>
 
                   {serverInfo?.hosts?.length ? (
                     <button
                       type="button"
-                      className={`${styles.dangerBtn} ${styles.syncBigBtn} ${styles.syncBtnGlass}`}
+                      className={`${styles.dangerBtn} ${styles.syncBigBtn}`}
                       onClick={() => void stopShare()}
                       disabled={exportBusy}
                     >
@@ -471,7 +480,7 @@ export function LanSyncModal({
                   ) : (
                     <button
                       type="button"
-                      className={`${styles.primaryBtn} ${styles.syncBigBtn} ${styles.syncBtnGlass}`}
+                      className={`${styles.primaryBtn} ${styles.syncBigBtn}`}
                       onClick={() => void startShare()}
                       disabled={exportBusy || !canUseStorage}
                     >
@@ -485,19 +494,19 @@ export function LanSyncModal({
                 <div className={styles.syncActionsRow} aria-label="json-import-actions">
                   <button
                     type="button"
-                    className={`${styles.primaryBtn} ${styles.syncBtnGlass}`}
+                    className={`${styles.primaryBtn}`}
                     onClick={() => void importFromDiscoveredPeers()}
                     disabled={importBusy || !canUseStorage}
                   >
-                    一键导入
+                    {importBusy ? "正在导入…" : "从局域网导入"}
                   </button>
                   <button
                     type="button"
-                    className={`${styles.secondaryBtn} ${styles.syncBtnGlass}`}
+                    className={`${styles.secondaryBtn}`}
                     onClick={() => void importFromJsonFile()}
                     disabled={importBusy || !canUseStorage}
                   >
-                    导入 JSON
+                    {importBusy ? "正在导入…" : "导入 JSON"}
                   </button>
                 </div>
 
@@ -506,13 +515,18 @@ export function LanSyncModal({
                     className={styles.syncInput}
                     value={manualTarget}
                     onChange={(e) => setManualTarget(e.target.value)}
-                    placeholder="共享端 IP，例如：192.168.1.8"
+                    aria-label="共享链接或 IP"
+                    placeholder="粘贴完整共享链接，或填写共享端 IP"
                     autoCapitalize="off"
                     autoCorrect="off"
                     spellCheck={false}
                   />
                 </div>
 
+                <div className={styles.syncField}>
+                  <input className={styles.syncInput} value={pairingCode} onChange={(e) => setPairingCode(e.target.value)}
+                    aria-label="配对码" placeholder="配对码（完整链接已包含时可留空）" autoCapitalize="off" autoCorrect="off" spellCheck={false} />
+                </div>
                 {importError ? (
                   <p className={styles.syncHint} style={{ color: "rgba(239, 68, 68, 0.95)" }}>
                     {importError}
@@ -524,7 +538,7 @@ export function LanSyncModal({
                 <div className={styles.syncActionsRow}>
                   <button
                     type="button"
-                    className={`${styles.primaryBtn} ${styles.syncBtnGlass}`}
+                    className={`${styles.primaryBtn}`}
                     onClick={() => void confirmImport()}
                     disabled={importBusy || !manualTarget.trim() || !canUseStorage}
                   >
@@ -533,7 +547,7 @@ export function LanSyncModal({
                   {importResult ? (
                     <button
                       type="button"
-                      className={`${styles.secondaryBtn} ${styles.syncBtnGlass}`}
+                      className={`${styles.secondaryBtn}`}
                       onClick={() => window.location.reload()}
                     >
                       刷新应用
@@ -545,6 +559,7 @@ export function LanSyncModal({
           </div>
         </m.div>
       </m.div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 }

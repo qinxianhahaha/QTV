@@ -3,7 +3,6 @@ use md5::{Digest, Md5};
 use reqwest::header::HeaderMap;
 #[allow(unused_imports)]
 use reqwest::StatusCode;
-use serde::Deserialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 // WBI signing constants and functions (extracted)
@@ -13,27 +12,11 @@ const MIXIN_KEY_ENC_TAB: [usize; 64] = [
     54, 21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52,
 ];
 
-#[derive(Deserialize)]
-struct WbiImg {
-    img_url: String,
-    sub_url: String,
-}
-
-#[derive(Deserialize)]
-struct Data {
-    wbi_img: WbiImg,
-}
-
-#[derive(Deserialize)]
-struct ResWbi {
-    data: Data,
-}
-
 fn get_mixin_key(orig: &[u8]) -> String {
     MIXIN_KEY_ENC_TAB
         .iter()
         .take(32)
-        .map(|&i| orig[i] as char)
+        .filter_map(|&i| orig.get(i).map(|byte| *byte as char))
         .collect::<String>()
 }
 
@@ -58,7 +41,7 @@ fn get_url_encoded(s: &str) -> String {
 fn encode_wbi(params: Vec<(&str, String)>, (img_key, sub_key): (String, String)) -> String {
     let cur_time = match SystemTime::now().duration_since(UNIX_EPOCH) {
         Ok(t) => t.as_secs(),
-        Err(_) => panic!("SystemTime before UNIX EPOCH!"),
+        Err(_) => 0,
     };
     _encode_wbi(params, (img_key, sub_key), cur_time)
 }
@@ -83,171 +66,40 @@ fn _encode_wbi(
     query + &format!("&w_rid={}", web_sign)
 }
 
-fn get_wbi_keys(headers: HeaderMap) -> Result<(String, String), reqwest::Error> {
-    let client = reqwest::blocking::Client::builder()
-        .https_only(true)
-        .no_proxy()
-        .build()
-        .unwrap();
 
-    let mut request_headers = headers;
-    request_headers.insert("user-agent", USER_AGENT.parse().unwrap());
-
-    let response = client.get(UID_INIT_URL).headers(request_headers).send()?;
-
-    let res_wbi: ResWbi = response.json()?;
-    Ok((
-        take_filename(res_wbi.data.wbi_img.img_url).unwrap(),
-        take_filename(res_wbi.data.wbi_img.sub_url).unwrap(),
-    ))
-}
-
-fn take_filename(url: String) -> Option<String> {
-    url.rsplit_once('/')
-        .and_then(|(_, s)| s.rsplit_once('.'))
-        .map(|(s, _)| s.to_string())
-}
-
-pub const UID_INIT_URL: &str = "https://api.bilibili.com/x/web-interface/nav";
-pub const DANMAKU_SERVER_CONF_URL: &str =
-    "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
-pub const USER_AGENT: &str =
-    "Mozilla/5.0 (X11; Linux x86_64; rv:138.0) Gecko/20100101 Firefox/138.0";
-
-/// Get UID using cookie (optional). If request fails or no cookie, returns (status, body).
-pub fn init_uid(headers: HeaderMap) -> (reqwest::StatusCode, String) {
-    let client = reqwest::blocking::Client::builder()
-        .https_only(true)
-        .no_proxy()
-        .build()
-        .unwrap();
-
-    let mut request_headers = headers;
-    request_headers.insert("user-agent", USER_AGENT.parse().unwrap());
-
-    let response = client.get(UID_INIT_URL).headers(request_headers).send();
-    let stat: reqwest::StatusCode;
-    let body: String;
-    match response {
-        Ok(resp) => {
-            let s: reqwest::StatusCode = resp.status();
-            stat = s;
-            match resp.text() {
-                Ok(b) => body = b,
-                Err(e) => body = format!("{{\"error\":\"{}\"}}", e),
-            }
-        }
-        Err(err) => {
-            stat = reqwest::StatusCode::INTERNAL_SERVER_ERROR;
-            body = format!("{{\"error\":\"{}\"}}", err);
-        }
-    }
-    (stat, body)
-}
-
-/// Query danmaku server host list and token via signed URL, with given headers
-pub fn init_host_server(headers: HeaderMap, room_id: u64) -> (reqwest::StatusCode, String) {
-    let client = reqwest::blocking::Client::builder()
-        .https_only(true)
-        .no_proxy()
-        .build()
-        .unwrap();
-
-    let mut request_headers = headers.clone();
-    request_headers.insert("user-agent", USER_AGENT.parse().unwrap());
-
-    let wbi_keys = match get_wbi_keys(request_headers.clone()) {
-        Ok(keys) => keys,
-        Err(e) => {
-            log::error!("Failed to get WBI keys: {:?}", e);
-            panic!("Failed to get WBI keys");
-        }
-    };
-
-    let params = vec![
-        ("id", room_id.to_string()),
-        ("type", "0".to_string()),
-        ("web_location", "444.8".to_string()),
-    ];
-
-    let signed_query = encode_wbi(params, wbi_keys);
-    let url = format!("{}?{}", DANMAKU_SERVER_CONF_URL, signed_query);
-
-    let response = client.get(url).headers(request_headers).send();
-    let stat: reqwest::StatusCode;
-    let body: String;
-    match response {
-        Ok(resp) => {
-            let s: reqwest::StatusCode = resp.status();
-            stat = s;
-            body = resp.text().unwrap_or_default();
-        }
-        Err(_) => {
-            stat = reqwest::StatusCode::INTERNAL_SERVER_ERROR;
-            body = String::new();
-        }
-    }
-    (stat, body)
-}
-
+use anyhow::{Context, Result};
 use super::models::AuthMessage;
 use serde_json::Value;
-use std::collections::HashMap;
+use std::time::Duration;
 
-/// Initialize server info and auth message using cookie
-pub fn init_server_with_cookie(cookies: &str, room_id: &str) -> (Value, AuthMessage) {
-    let mut auth_map = HashMap::new();
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::COOKIE,
-        reqwest::header::HeaderValue::from_str(cookies).unwrap(),
-    );
-    headers.insert(
-        reqwest::header::USER_AGENT,
-        reqwest::header::HeaderValue::from_static(USER_AGENT),
-    );
+pub const UID_INIT_URL: &str = "https://api.bilibili.com/x/web-interface/nav";
+pub const DANMAKU_SERVER_CONF_URL: &str = "https://api.live.bilibili.com/xlive/web-room/v1/index/getDanmuInfo";
+pub const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15";
 
-    // Try get uid via cookie (optional)
-    let (_, body1) = init_uid(headers.clone());
-    let body1_v: Value = serde_json::from_str(body1.as_str()).unwrap_or(Value::Null);
-    if let Some(mid) = body1_v["data"]["mid"].as_i64() {
-        auth_map.insert("uid".to_string(), mid.to_string());
-    } else {
-        auth_map.insert("uid".to_string(), "0".to_string());
+fn init_server(cookie: Option<&str>, room_id: &str) -> Result<(Value, AuthMessage)> {
+    let roomid = room_id.parse::<u64>().context("Invalid Bilibili room ID")?;
+    let client = reqwest::blocking::Client::builder().https_only(true).no_proxy()
+        .connect_timeout(Duration::from_secs(5)).timeout(Duration::from_secs(10)).build()?;
+    let mut headers = HeaderMap::new();
+    headers.insert("User-Agent", reqwest::header::HeaderValue::from_static(USER_AGENT));
+    if let Some(cookie) = cookie.filter(|v| !v.trim().is_empty()) {
+        headers.insert("Cookie", reqwest::header::HeaderValue::from_str(cookie).context("Invalid cookie header")?);
     }
-
-    auth_map.insert("room_id".to_string(), room_id.to_string());
-
-    let room_id_num = room_id.parse::<u64>().expect("room_id must be a valid u64");
-    let (_, body4) = init_host_server(headers.clone(), room_id_num);
-    let body4_res: Value = serde_json::from_str(body4.as_str()).unwrap();
-    let server_info = &body4_res["data"];
-    let token = &body4_res["data"]["token"].as_str().unwrap();
-    auth_map.insert("token".to_string(), token.to_string());
-
-    let auth_msg = AuthMessage::from(&auth_map);
-    (server_info.clone(), auth_msg)
+    let nav: Value = client.get(UID_INIT_URL).headers(headers.clone()).send()?.error_for_status()?.json()?;
+    let take_key = |name: &str| -> Result<String> {
+        let raw = nav["data"]["wbi_img"][name].as_str().context("Missing WBI image key")?;
+        let key = raw.rsplit_once('/').and_then(|(_, s)| s.rsplit_once('.')).map(|(s, _)| s).context("Invalid WBI image key")?;
+        anyhow::ensure!(key.len() == 32 && key.bytes().all(|b| b.is_ascii_hexdigit()), "Malformed WBI key");
+        Ok(key.to_string())
+    };
+    let query = encode_wbi(vec![("id", roomid.to_string()), ("type", "0".into()), ("web_location", "444.8".into())], (take_key("img_url")?, take_key("sub_url")?));
+    let response: Value = client.get(format!("{DANMAKU_SERVER_CONF_URL}?{query}")).headers(headers).send()?.error_for_status()?.json()?;
+    anyhow::ensure!(response["code"].as_i64() == Some(0), "Bilibili danmaku endpoint rejected the request");
+    let data = response["data"].clone();
+    let key = data["token"].as_str().filter(|s| !s.is_empty()).context("Missing danmaku token")?.to_owned();
+    let auth = AuthMessage { uid: nav["data"]["mid"].as_u64().unwrap_or(0), roomid, protover: 3, platform: "web".into(), type_: 2, key };
+    Ok((data, auth))
 }
 
-/// Initialize server info and auth message without cookie (uid=0)
-pub fn init_server_no_cookie(room_id: &str) -> (Value, AuthMessage) {
-    let mut auth_map = HashMap::new();
-    let mut headers = reqwest::header::HeaderMap::new();
-    headers.insert(
-        reqwest::header::USER_AGENT,
-        reqwest::header::HeaderValue::from_static(USER_AGENT),
-    );
-
-    auth_map.insert("uid".to_string(), "0".to_string());
-    auth_map.insert("room_id".to_string(), room_id.to_string());
-
-    let room_id_num = room_id.parse::<u64>().expect("room_id must be a valid u64");
-    let (_, body4) = init_host_server(headers.clone(), room_id_num);
-    let body4_res: Value = serde_json::from_str(body4.as_str()).unwrap();
-    let server_info = &body4_res["data"];
-    let token = &body4_res["data"]["token"].as_str().unwrap();
-    auth_map.insert("token".to_string(), token.to_string());
-
-    let auth_msg = AuthMessage::from(&auth_map);
-    (server_info.clone(), auth_msg)
-}
+pub fn init_server_with_cookie(cookie: &str, room_id: &str) -> Result<(Value, AuthMessage)> { init_server(Some(cookie), room_id) }
+pub fn init_server_no_cookie(room_id: &str) -> Result<(Value, AuthMessage)> { init_server(None, room_id) }

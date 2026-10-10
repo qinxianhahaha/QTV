@@ -1,5 +1,6 @@
 "use client";
 
+import { invoke } from "@tauri-apps/api/core";
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -82,7 +83,10 @@ export function useBilibiliCookie(options: Options = {}) {
 
   const logout = useCallback(async () => {
     setError(null);
-    persist(null);
+    try {
+      await invoke("clear_bilibili_cookie");
+      persist(null);
+    } catch { setError("清除登录状态失败，请重试"); }
   }, [persist]);
 
   const bootstrap = useCallback(async () => {
@@ -125,8 +129,9 @@ export function useBilibiliCookie(options: Options = {}) {
       const intervalMs = 1_500;
       const deadline = Date.now() + timeoutMs;
 
-      while (!windowClosed && Date.now() < deadline) {
+      while (mountedRef.current && !windowClosed && Date.now() < deadline) {
         const result = await getBilibiliCookies([loginWindow.label]);
+        if (!mountedRef.current) return;
         if (hasRequiredCookies(result)) {
           persist(result.cookie);
           try {

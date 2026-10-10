@@ -26,12 +26,13 @@ pub async fn handle_received_messages(
                     match PushFrame::decode(bin_data.as_slice()) {
                         Ok(push_frame) => {
                             if push_frame.payload_type == "msg" && !push_frame.payload.is_empty() {
-                                let mut gz = GzDecoder::new(push_frame.payload.as_slice());
+                                let mut gz = GzDecoder::new(push_frame.payload.as_slice()).take(8 * 1024 * 1024 + 1);
                                 let mut decompressed_payload = Vec::new();
                                 if let Err(e) = gz.read_to_end(&mut decompressed_payload) {
                                     warn!("[Douyin Danmaku] Gzip decompression error: {}", e);
                                     continue;
                                 }
+                                if decompressed_payload.len() > 8 * 1024 * 1024 { continue; }
                                 match Response::decode(decompressed_payload.as_slice()) {
                                     Ok(response) => {
                                         if response.need_ack {

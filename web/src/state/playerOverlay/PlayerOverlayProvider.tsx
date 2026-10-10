@@ -1,8 +1,7 @@
 "use client";
 
-import React, { useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useContext, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
-import { AnimatePresence, m } from "framer-motion";
 
 import styles from "./PlayerOverlayProvider.module.css";
 
@@ -36,41 +35,19 @@ export function usePlayerOverlay() {
 export function PlayerOverlayHost() {
   const { isOpen, platform, roomId, closePlayer } = usePlayerOverlay();
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") closePlayer();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [closePlayer, isOpen]);
-
-  // NOTE:
-  // - Avoid transforms while playing video (WebView2 may black-screen with transformed ancestors).
-  // - Only apply the "drop" transform on exit, when the user is closing the player anyway.
+  // Unmount immediately: an exit animation used to delay native window restoration
+  // and animate a decoding video while the home page was laid out at mini size.
   return (
-    <AnimatePresence>
+    <>
       {isOpen ? (
-        <m.div
-          className={styles.overlayRoot}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          transition={{ duration: 0.16 }}
-        >
+        <div className={styles.overlayRoot}>
           <button type="button" className={styles.backdrop} aria-label="关闭播放器" onClick={closePlayer} />
-          <m.div
-            className={styles.overlayPanel}
-            initial={false}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0, y: 110, rotate: 0.6, scale: 0.985 }}
-            transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-          >
+          <div className={styles.overlayPanel}>
             <PlayerPage platform={platform} roomId={roomId} onRequestClose={closePlayer} />
-          </m.div>
-        </m.div>
+          </div>
+        </div>
       ) : null}
-    </AnimatePresence>
+    </>
   );
 }
 

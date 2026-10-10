@@ -25,9 +25,9 @@ fn save_config_export_impl(
     default_file_name: String,
     contents: String,
 ) -> Result<Option<String>, String> {
-    let fallback_file_name = "dtv-config.json";
+    let fallback_file_name = "qtv-config.json";
     let selected_path = rfd::FileDialog::new()
-        .add_filter("DTV Config", &["json"])
+        .add_filter("QTV Config", &["json"])
         .set_file_name(if default_file_name.trim().is_empty() {
             fallback_file_name
         } else {
@@ -55,7 +55,7 @@ fn save_config_export_impl(
 #[cfg(any(target_os = "windows", target_os = "macos", target_os = "linux"))]
 fn pick_config_import_impl() -> Result<Option<ImportedConfigFile>, String> {
     let selected_path = rfd::FileDialog::new()
-        .add_filter("DTV Config", &["json"])
+        .add_filter("QTV Config", &["json"])
         .pick_file();
 
     let Some(path) = selected_path else {

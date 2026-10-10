@@ -111,6 +111,7 @@ pub async fn fetch_bilibili_streamer_info(
             title: None,
             anchor_name: None,
             avatar: None,
+            cover_url: None,
             stream_url: None,
             status: None,
             error_message: Some("房间ID未提供".to_string()),
@@ -166,6 +167,7 @@ pub async fn fetch_bilibili_streamer_info(
             title: None,
             anchor_name: None,
             avatar: None,
+            cover_url: None,
             stream_url: None,
             status: None,
             error_message: Some(format!("Room info status: {} body: {}", status, text)),
@@ -177,6 +179,9 @@ pub async fn fetch_bilibili_streamer_info(
     }
     let j: Value = serde_json::from_str(&text)
         .map_err(|e| format!("Room info JSON parse failed: {} | body: {}", e, text))?;
+    if j["code"].as_i64() != Some(0) || !j["data"]["room_info"].is_object() {
+        return Err("B站房间信息暂时不可用，请稍后刷新".to_string());
+    }
     let data = j["data"].clone();
 
     let base_info = data["anchor_info"]["base_info"].clone();
@@ -191,6 +196,8 @@ pub async fn fetch_bilibili_streamer_info(
         title,
         anchor_name,
         avatar,
+        cover_url: room_info["keyframe"].as_str().filter(|s| !s.is_empty())
+            .or_else(|| room_info["cover"].as_str()).map(str::to_string),
         stream_url: None,
         status: Some(live_status),
         error_message: None,

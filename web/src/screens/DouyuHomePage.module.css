@@ -32,7 +32,7 @@
 .cate3ItemActive {
   background: var(--accent-gradient);
   border-color: color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
-  color: #ffffff;
+  color: var(--accent-text);
   font-weight: 900;
   box-shadow: none;
 }
@@ -44,7 +44,7 @@
 :global(:root[data-theme="light"]) .cate3ItemActive {
   background: var(--accent-gradient);
   border-color: color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
-  color: #ffffff;
+  color: var(--accent-text);
   box-shadow: none;
 }
 
@@ -60,7 +60,7 @@
 :global(:root[data-theme="dark"]) .cate3ItemActive {
   background: var(--accent-gradient);
   border-color: color-mix(in srgb, var(--accent) 65%, var(--accent-hover));
-  color: #ffffff;
+  color: var(--accent-text);
   box-shadow: none;
 }
 

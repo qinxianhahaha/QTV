@@ -16,7 +16,9 @@ mod lan_sync;
 mod sync_transfer;
 mod platforms;
 mod proxy;
+mod network_policy;
 mod version_check;
+mod window_layout;
 use platforms::common::{DouyinDanmakuState, FollowHttpClient, HuyaDanmakuState};
 use platforms::douyin::danmu::signature::generate_douyin_ms_token;
 use platforms::douyin::fetch_douyin_partition_rooms;
@@ -73,6 +75,14 @@ async fn get_stream_url_with_quality_cmd(
             );
             format!("Failed to get stream URL with quality: {}", e.to_string())
         })
+}
+
+#[tauri::command]
+async fn get_douyu_playback_cmd(room_id: String, quality: String, line: Option<String>, prefer_hevc: Option<bool>, route: Option<usize>) -> Result<platforms::douyu::stream_url::DouyuPlayback, String> {
+    tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        platforms::douyu::stream_url::get_playback(&room_id, &quality, line.as_deref(), prefer_hevc.unwrap_or(false), route.unwrap_or(0))
+            .await.map_err(|e| e.to_string())
+    }).await.map_err(|_| "获取斗鱼直播流超时，请检查网络后重试".to_string())?
 }
 
 // Legacy Huya stream URL command removed in favor of unified command
@@ -165,12 +175,94 @@ async fn search_anchor(keyword: String) -> Result<String, String> {
 #[tauri::command]
 fn open_in_default_browser(app: tauri::AppHandle, url: String) -> Result<(), String> {
     let trimmed = url.trim();
-    if trimmed.is_empty() {
-        return Err("URL is empty.".to_string());
+    let parsed = url::Url::parse(trimmed).map_err(|_| "Invalid URL".to_string())?;
+    if !network_policy::external_url_allowed(&parsed) {
+        return Err("Only HTTP(S) links can be opened.".into());
     }
     app.opener()
         .open_url(trimmed, None::<String>)
         .map_err(|e| e.to_string())
+}
+
+// Use AppKit's native live-resize constraint: no JS resize feedback loop/jitter.
+#[tauri::command]
+async fn set_playback_aspect(window: tauri::WebviewWindow, locked: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = oneshot::channel();
+        let target = window.clone();
+        window.run_on_main_thread(move || {
+            let result = target.ns_window().map_err(|e| e.to_string()).map(|ptr| {
+                // Tauri owns this NSWindow; access is confined to its main thread.
+                let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+                let ratio = if locked { objc2_foundation::NSSize::new(16.0, 9.0) }
+                    else { objc2_foundation::NSSize::new(0.0, 0.0) };
+                native.setAspectRatio(ratio);
+            });
+            let _ = tx.send(result);
+        }).map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    { let _ = (window, locked); Ok(()) }
+}
+
+// Resize and reposition together on the AppKit main thread, without showing an
+// intermediate enlarged window at the small player's former corner position.
+#[tauri::command]
+async fn set_playback_layout(window: tauri::WebviewWindow, width: f64, compact: bool, center: bool, anchor_x: Option<f64>, anchor_y: Option<f64>) -> Result<(), String> {
+    if !width.is_finite() || width < 1.0 || width > 20000.0 {
+        return Err("Invalid window width".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let (tx, rx) = oneshot::channel();
+        let target = window.clone();
+        window.run_on_main_thread(move || {
+            let result = target.ns_window().map_err(|e| e.to_string()).map(|ptr| {
+                let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+                let previous = native.frame();
+                let pointer = match (anchor_x, anchor_y) {
+                    (Some(x), Some(y)) if x.is_finite() && y.is_finite() =>
+                        objc2_foundation::NSPoint::new(previous.origin.x + x, previous.origin.y + previous.size.height - y),
+                    _ => objc2_app_kit::NSEvent::mouseLocation(),
+                };
+                let pointer_screen = if compact {
+                    objc2_foundation::MainThreadMarker::new().and_then(|mtm| {
+                        objc2_app_kit::NSScreen::screens(mtm).iter().find(|screen| {
+                            let r = screen.frame();
+                            pointer.x >= r.origin.x && pointer.x < r.origin.x + r.size.width
+                                && pointer.y >= r.origin.y && pointer.y < r.origin.y + r.size.height
+                        })
+                    })
+                } else { None };
+                let area = pointer_screen.or_else(|| native.screen()).map(|screen| screen.visibleFrame());
+                let to_frame = |rect: objc2_foundation::NSRect| window_layout::Frame {
+                    x: rect.origin.x, y: rect.origin.y, width: rect.size.width, height: rect.size.height
+                };
+                let frame = window_layout::playback_frame(to_frame(previous), area.map(to_frame), width, center);
+                let frame = if compact && !center {
+                    window_layout::frame_at_pointer(frame, area.map(to_frame), pointer.x, pointer.y)
+                } else { frame };
+                let size = objc2_foundation::NSSize::new(frame.width, frame.height);
+                let min_width = if compact { 480.0_f64 } else { 960.0_f64 }.min(frame.width);
+                native.setContentMinSize(objc2_foundation::NSSize::new(min_width, min_width * 9.0 / 16.0));
+                native.setAspectRatio(objc2_foundation::NSSize::new(16.0, 9.0));
+                let origin = objc2_foundation::NSPoint::new(frame.x, frame.y);
+                native.setFrame_display(objc2_foundation::NSRect::new(origin, size), true);
+            });
+            let _ = tx.send(result);
+        }).map_err(|e| e.to_string())?;
+        rx.await.map_err(|e| e.to_string())?
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let min_width = if compact { 480.0_f64 } else { 960.0_f64 }.min(width);
+        window.set_min_size(Some(tauri::LogicalSize::new(min_width, min_width * 9.0 / 16.0))).map_err(|e| e.to_string())?;
+        window.set_size(tauri::LogicalSize::new(width, width * 9.0 / 16.0)).map_err(|e| e.to_string())?;
+        if center { window.center().map_err(|e| e.to_string())?; }
+        Ok(())
+    }
 }
 
 // Main function corrected
@@ -194,6 +286,7 @@ fn main() {
             .plugin(tauri_plugin_os::init())
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_window_state::Builder::default()
+                .skip_initial_state("main")
                 .with_state_flags(
                     tauri_plugin_window_state::StateFlags::SIZE
                         | tauri_plugin_window_state::StateFlags::POSITION
@@ -206,6 +299,24 @@ fn main() {
                 {
                     use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial};
                     if let Some(window) = _app.get_webview_window("main") {
+                        // Lock the home window from launch, before any player is opened.
+                        if let Ok(ptr) = window.ns_window() {
+                            let native = unsafe { &*(ptr as *const objc2_app_kit::NSWindow) };
+                            native.setAspectRatio(objc2_foundation::NSSize::new(16.0, 9.0));
+                            // Tauri's initial content size can include a titlebar rounding
+                            // point. Normalize the outer frame before the first interaction.
+                            let to_frame = |rect: objc2_foundation::NSRect| window_layout::Frame {
+                                x: rect.origin.x, y: rect.origin.y,
+                                width: rect.size.width, height: rect.size.height,
+                            };
+                            let previous = native.frame();
+                            let area = native.screen().map(|screen| to_frame(screen.visibleFrame()));
+                            let frame = window_layout::playback_frame(to_frame(previous), area, previous.size.width, true);
+                            native.setFrame_display(objc2_foundation::NSRect::new(
+                                objc2_foundation::NSPoint::new(frame.x, frame.y),
+                                objc2_foundation::NSSize::new(frame.width, frame.height),
+                            ), true);
+                        }
                         match apply_vibrancy(&window, NSVisualEffectMaterial::HudWindow, None, None) {
                             Ok(_) => println!("vibrancy applied successfully"),
                             Err(e) => eprintln!("vibrancy error: {:?}", e),
@@ -222,11 +333,15 @@ fn main() {
             .manage(platforms::common::BilibiliDanmakuState::default()) // Manage BilibiliDanmakuState
             .manage(StreamUrlStore::default())
             .manage(proxy::ProxyServerHandle::default())
+            .manage(proxy::StaticProxyState::default())
             .manage(platforms::bilibili::state::BilibiliState::default())
             .manage(lan_sync::LanSyncServerState::default())
             .invoke_handler(tauri::generate_handler![
                 get_stream_url_cmd,
+                set_playback_aspect,
+                set_playback_layout,
                 get_stream_url_with_quality_cmd,
+            get_douyu_playback_cmd,
                 set_stream_url_cmd,
                 search_anchor,
                 config_transfer::save_config_export,
@@ -237,7 +352,6 @@ fn main() {
                 lan_sync::lan_sync_start_server,
                 lan_sync::lan_sync_stop_server,
                 lan_sync::lan_sync_status,
-                lan_sync::lan_sync_token,
                 lan_sync::lan_sync_discover,
                 lan_sync::lan_sync_fetch_manifest,
                 lan_sync::lan_sync_fetch_payload,
@@ -271,6 +385,7 @@ fn main() {
                 platforms::bilibili::stream_url::get_bilibili_live_stream_url_with_quality,
                 platforms::bilibili::streamer_info::fetch_bilibili_streamer_info,
                 platforms::bilibili::cookie::get_bilibili_cookie,
+                platforms::bilibili::cookie::clear_bilibili_cookie,
                 platforms::bilibili::cookie::bootstrap_bilibili_cookie,
                 platforms::bilibili::search::search_bilibili_rooms,
                 platforms::huya::search::search_huya_anchors,

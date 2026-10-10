@@ -42,10 +42,15 @@ pub async fn start_bilibili_danmaku_listener(
 
     // Spawn std thread to run sync BiliLiveClient loop
     std::thread::spawn(move || {
-        let mut client = match cookie_clone.as_ref() {
+        let result = match cookie_clone.as_ref() {
             Some(c) => BiliLiveClient::new_with_cookie(c.as_str(), room_id_clone.as_str()),
             None => BiliLiveClient::new_without_cookie(room_id_clone.as_str()),
         };
+        let mut client = match result {
+            Ok(client) => client,
+            Err(error) => { log::warn!("Bilibili danmaku unavailable: {error}"); return; }
+        };
+        if stop_flag_for_thread.load(Ordering::Relaxed) { return; }
         client.send_auth();
 
         loop {

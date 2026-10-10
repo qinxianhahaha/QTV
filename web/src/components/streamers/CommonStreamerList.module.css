@@ -75,7 +75,7 @@
 }
 
 .cardOuter:focus-visible {
-  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.55);
+  box-shadow: 0 0 0 2px var(--accent-glow);
 }
 
 .card {
@@ -150,7 +150,7 @@
   box-shadow:
     0 10px 30px rgba(0, 0, 0, 0.35),
     0 0 0 1px rgba(255, 255, 255, 0.06) inset,
-    0 0 28px rgba(99, 102, 241, 0.22);
+    0 0 28px rgba(148, 163, 184, 0.22);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   will-change: transform, opacity;

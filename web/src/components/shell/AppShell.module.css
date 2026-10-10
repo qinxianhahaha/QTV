@@ -74,6 +74,7 @@
 }
 
 .routePendingOverlay {
+  animation: routeFadeIn var(--dur-3) var(--ease-out) 120ms both;
   position: absolute;
   inset: 0;
   display: flex;
@@ -84,13 +85,31 @@
 }
 
 .routePendingButton {
-  width: 132px;
+  width: 72px;
   height: 56px;
   border-radius: 14px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-low);
   display: flex;
   align-items: center;
   justify-content: center;
   padding: 0;
+}
+
+.routeFade {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  animation: routeFadeIn var(--dur-4) var(--ease-out) both;
+}
+
+@keyframes routeFadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .routeFade, .routePendingOverlay { animation: none; }
 }

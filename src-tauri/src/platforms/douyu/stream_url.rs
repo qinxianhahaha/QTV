@@ -1,11 +1,15 @@
 use deno_core::{JsRuntime, RuntimeOptions};
+use base64::Engine;
+use std::collections::BTreeMap;
+use super::app_signature;
 use html_escape::decode_html_entities;
 use reqwest::{
     header::{HeaderMap, HeaderValue},
     redirect::Policy,
     Client,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use super::quality_policy::{self, RateVariant as DouyuRateVariant};
 use serde_json::Value;
 #[cfg(target_os = "linux")]
 use std::sync::Once;
@@ -28,11 +32,17 @@ struct DouyuPlayInfo {
     cdns: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
-struct DouyuRateVariant {
-    name: String,
-    rate: i32,
-    bit: Option<i32>,
+#[derive(Clone, Debug, Serialize)]
+pub struct DouyuPlayback {
+    pub url: String,
+    pub actual_quality: String,
+    pub quality_limited: bool,
+    pub line: String,
+    pub requested_hevc: bool,
+    pub requested_rate: i32,
+    pub actual_rate: Option<i32>,
+    pub available_qualities: Vec<DouyuRateVariant>,
+    pub api: String,
 }
 
 fn value_to_i32(value: &Value) -> Option<i32> {
@@ -101,6 +111,7 @@ impl DouYu {
         let client = Client::builder()
             .redirect(Policy::limited(10))
             .no_proxy()
+            .timeout(std::time::Duration::from_secs(12))
             .default_headers(default_headers)
             .build()?;
 
@@ -205,10 +216,11 @@ impl DouYu {
         &self,
         room_id: &str,
         sign_data: &str,
+        prefer_hevc: bool,
     ) -> Result<DouyuPlayInfo, Box<dyn std::error::Error>> {
         let payload = format!(
-            "{}&cdn=&rate=-1&ver=Douyu_223061205&iar=1&ive=1&hevc=0&fa=0",
-            sign_data
+            "{}&cdn=&rate=-1&ver=Douyu_223061205&iar=0&ive=1&hevc={}&fa=0",
+            sign_data, if prefer_hevc { 1 } else { 0 }
         );
         let url = format!("https://www.douyu.com/lapi/live/getH5Play/{}", room_id);
         let json = self
@@ -286,8 +298,10 @@ impl DouYu {
         sign_data: &str,
         rate: i32,
         cdn: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let payload = format!("{}&cdn={}&rate={}", sign_data, cdn, rate);
+        prefer_hevc: bool,
+        variants: &[DouyuRateVariant],
+    ) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
+        let payload = format!("{}&cdn={}&rate={}&hevc={}", sign_data, cdn, rate, if prefer_hevc { 1 } else { 0 });
         let url = format!("https://www.douyu.com/lapi/live/getH5Play/{}", room_id);
         let json = self
             .client
@@ -319,7 +333,74 @@ impl DouYu {
             .and_then(|v| v.as_str())
             .ok_or("No rtmp_live field")?;
         let rtmp_live = decode_html_entities(rtmp_live).to_string();
-        Ok(format!("{}/{}", rtmp_url, rtmp_live))
+        let actual_rate = data.get("rate").and_then(value_to_i32);
+        let actual = actual_rate.and_then(|r| variants.iter().find(|v| v.rate == r));
+        Ok(DouyuPlayback {
+            // Some responses provide the HEVC stream separately from the AVC URL.
+            url: if prefer_hevc {
+                data.get("player_1").and_then(Value::as_str).map(str::trim)
+                    .filter(|url| url.starts_with("https://") || url.starts_with("http://"))
+                    .map(str::to_string).unwrap_or_else(|| format!("{}/{}", rtmp_url, rtmp_live))
+            } else { format!("{}/{}", rtmp_url, rtmp_live) },
+            actual_quality: actual.map(|v| v.name.clone()).unwrap_or_else(|| "画质待确认".into()),
+            quality_limited: actual_rate.is_some_and(|r| r != rate),
+            line: data.get("cdn").and_then(Value::as_str).unwrap_or(cdn).to_string(),
+            requested_hevc: prefer_hevc,
+            requested_rate: rate, actual_rate, available_qualities: variants.to_vec(), api: "web".into(),
+        })
+    }
+
+    // The app endpoint exposes the original stream that the H5 endpoint may
+    // silently cap to rate=4. Same public playback flow as biliup; no account
+    // token is sent. Standard signed CDN URLs are kept untouched.
+    async fn get_app_play_url(&self, room_id: &str, rate: i32, cdn: &str, prefer_hevc: bool, variants: &[DouyuRateVariant]) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let path = format!("/lapi/live/appGetPlayer/stream/{room_id}");
+        let device_id = app_signature::DEFAULT_DEVICE_ID;
+        use rand::Rng;
+        let device = {
+            let mut rng = rand::thread_rng();
+            format!("{}{}{}-{}{}{}{}", (b'A'+rng.gen_range(0..26)) as char, (b'A'+rng.gen_range(0..26)) as char, (b'A'+rng.gen_range(0..26)) as char, (b'A'+rng.gen_range(0..26)) as char, (b'A'+rng.gen_range(0..26)) as char, rng.gen_range(0..10), rng.gen_range(0..10))
+        };
+        let mut params = BTreeMap::new();
+        for (key,value) in [("txdw","0"),("cdn",cdn.trim_end_matches("-h5")),("token",""),("hevc","1"),("ilow","0"),("iar","0"),("net","WIFI"),("device",device.as_str())] {
+            params.insert(key.to_string(),value.to_string());
+        }
+        params.insert("rate".into(),rate.to_string());
+        let signature = app_signature::csign(room_id.parse()?, device_id, timestamp, &params);
+        let amd = app_signature::amd(&signature, device_id);
+        params.insert("csign".into(),signature);
+        params.insert("cptl".into(),"0103".into());
+        params.insert("amd".into(),amd);
+        params.insert("client_sys".into(),"android".into());
+        let auth = app_signature::header_auth(&path,timestamp,"android1",&params);
+        let json: Value = self.client.get(format!("https://playclient.douyucdn.cn{path}"))
+            .query(&params)
+            .header("User-Device",base64::engine::general_purpose::STANDARD.encode(format!("{device_id}|v8.2.2.0")))
+            .header("aid","android1").header("channel","447")
+            .header("User-Agent",format!("android/8.2.2.0 (android 16; ; {device})"))
+            .header("time",timestamp.to_string()).header("auth",auth)
+            .header("Cookie",format!("acf_did={device_id}"))
+            .timeout(std::time::Duration::from_secs(8)).send().await?.error_for_status()?.json().await?;
+        let error = json.get("error").and_then(value_to_i32).unwrap_or(-1);
+        if error != 0 {
+            return Err(format!("斗鱼播放接口错误 {}: {}",error,json["msg"].as_str().unwrap_or("")).into());
+        }
+        let data = &json["data"];
+        let avc_url = format!("{}/{}",data["rtmp_url"].as_str().ok_or("斗鱼未返回播放地址")?.trim_end_matches('/'),data["rtmp_live"].as_str().ok_or("斗鱼未返回播放地址")?.trim_start_matches('/'));
+        let hevc_url = data["player_1"].as_str().map(str::trim)
+            .filter(|s| s.starts_with("https://") || s.starts_with("http://"));
+        let url = if prefer_hevc { hevc_url.unwrap_or(&avc_url) } else { &avc_url };
+        let actual_rate = data.get("rate").and_then(value_to_i32);
+        let actual = actual_rate.and_then(|r| variants.iter().find(|v| v.rate == r));
+        Ok(DouyuPlayback {
+            url: decode_html_entities(url).to_string(),
+            actual_quality: actual.map(|v| v.name.clone()).unwrap_or_else(|| "画质待确认".into()),
+            quality_limited: actual_rate.is_some_and(|r| r != rate),
+            line: data["cdn"].as_str().unwrap_or(cdn).into(),
+            requested_hevc: prefer_hevc && hevc_url.is_some(), requested_rate: rate,
+            actual_rate, available_qualities: variants.to_vec(), api: "app".into(),
+        })
     }
 
     fn select_cdn(requested: Option<&str>, available: &[String]) -> String {
@@ -342,156 +423,52 @@ impl DouYu {
     }
 
     pub async fn get_real_url(&self, cdn: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(self.get_playback("原画", cdn, false, 0).await?.url)
+    }
+
+    pub async fn get_real_url_with_quality(&self, quality: &str, cdn: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(self.get_playback(quality, cdn, false, 0).await?.url)
+    }
+
+    pub async fn get_playback(&self, quality: &str, cdn: Option<&str>, prefer_hevc: bool, route: usize) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
         let (real_room_id, is_live) = self.fetch_room_detail().await?;
-        if !is_live {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "主播未开播",
-            )));
-        }
-
+        if !is_live { return Err("主播未开播".into()); }
         let sign_data = self.build_sign_params(&real_room_id).await?;
-        let play_info = self.get_play_qualities(&real_room_id, &sign_data).await?;
-        let best_rate = play_info
-            .variants
-            .iter()
-            .map(|variant| variant.rate)
-            .max()
-            .unwrap_or(0);
-        let selected_cdn = Self::select_cdn(cdn, &play_info.cdns);
-        self.get_play_url(&real_room_id, &sign_data, best_rate, &selected_cdn)
-            .await
-    }
-
-    pub async fn get_real_url_with_quality(
-        &self,
-        quality: &str,
-        cdn: Option<&str>,
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let (real_room_id, is_live) = self.fetch_room_detail().await?;
-        if !is_live {
-            return Err(Box::new(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "主播未开播",
-            )));
+        let info = self.get_play_qualities(&real_room_id, &sign_data, prefer_hevc).await?;
+        let selected_rate = quality_policy::select(&info.variants, quality).map(|v| v.rate).unwrap_or(0);
+        let primary = Self::select_cdn(cdn, &info.cdns);
+        let base = info.cdns.iter().position(|v| v == &primary).unwrap_or(0);
+        let selected_cdn = if info.cdns.is_empty() { primary } else { info.cdns[(base + route) % info.cdns.len()].clone() };
+        // H5 may only advertise its capped fallback CDN. The app endpoint has
+        // its own CDN set; don't inherit that H5 restriction for the app request.
+        let app_cdns = ["ws-h5", "tct-h5", "ali-h5", "hs-h5"];
+        let app_base = app_cdns.iter().position(|c| *c == normalize_douyu_cdn(cdn)).unwrap_or(0);
+        let app_cdn = app_cdns[(app_base + route) % app_cdns.len()];
+        let app_result = self.get_app_play_url(&real_room_id, selected_rate, app_cdn, prefer_hevc, &info.variants).await.map_err(|e| e.to_string());
+        if let Ok(stream) = &app_result {
+            if stream.actual_rate == Some(selected_rate) { return Ok(stream.clone()); }
         }
-
-        let sign_data = self.build_sign_params(&real_room_id).await?;
-        let play_info = self.get_play_qualities(&real_room_id, &sign_data).await?;
-        let selected_rate = Self::resolve_rate_for_quality(quality, &play_info.variants)
-            .or_else(|| play_info.variants.iter().map(|v| v.rate).max())
-            .unwrap_or(0);
-        println!(
-            "[Douyu Stream URL] Requested quality '{}', resolved rate {} (variants: {:?})",
-            quality, selected_rate, play_info.variants
-        );
-        let selected_cdn = Self::select_cdn(cdn, &play_info.cdns);
-        self.get_play_url(&real_room_id, &sign_data, selected_rate, &selected_cdn)
-            .await
-    }
-
-    fn resolve_rate_for_quality(quality: &str, variants: &[DouyuRateVariant]) -> Option<i32> {
-        if variants.is_empty() {
-            return None;
+        // A nominally successful endpoint may have capped the stream. Compare
+        // actual returned rates before accepting it, including the H5 fallback.
+        let mut web_result = self.get_play_url(&real_room_id, &sign_data, selected_rate, &selected_cdn, prefer_hevc, &info.variants).await.map_err(|e| e.to_string());
+        if web_result.is_err() && prefer_hevc {
+            web_result = self.get_play_url(&real_room_id, &sign_data, selected_rate, &selected_cdn, false, &info.variants).await.map_err(|e| e.to_string());
         }
-
-        let trimmed = quality.trim();
-        let ascii_lower = trimmed.to_ascii_lowercase();
-        let canonical = if trimmed.contains('原') || ascii_lower == "origin" {
-            "原画"
-        } else if trimmed.contains('高') || ascii_lower == "high" {
-            "高清"
-        } else if trimmed.contains('标') || ascii_lower == "standard" {
-            "标清"
-        } else {
-            trimmed
-        };
-
-        let find_by_keywords = |keywords: &[&str], exclude_zero: bool| -> Option<i32> {
-            for keyword in keywords {
-                if let Some(item) = variants.iter().find(|v| v.name.contains(keyword)) {
-                    if exclude_zero && item.rate == 0 {
-                        continue;
-                    }
-                    return Some(item.rate);
-                }
-            }
-            None
-        };
-
-        match canonical {
-            "原画" => {
-                if let Some(item) = variants.iter().find(|v| v.rate == 0) {
-                    return Some(item.rate);
-                }
-                if let Some(rate) = find_by_keywords(&["原画", "蓝光8M", "蓝光"], false) {
-                    return Some(rate);
-                }
-                variants.iter().map(|v| v.rate).min()
-            }
-            "高清" => {
-                if let Some(item) = variants.iter().find(|v| v.rate == 4) {
-                    return Some(item.rate);
-                }
-                if let Some(rate) = find_by_keywords(&["蓝光", "蓝光4M"], false) {
-                    return Some(rate);
-                }
-                if let Some(rate) = find_by_keywords(&["超清"], true) {
-                    return Some(rate);
-                }
-                if let Some(rate) = find_by_keywords(&["高清"], true) {
-                    return Some(rate);
-                }
-                variants
-                    .iter()
-                    .filter(|v| v.rate != 0)
-                    .max_by_key(|v| v.bit.unwrap_or(0))
-                    .map(|v| v.rate)
-                    .or_else(|| {
-                        variants
-                            .iter()
-                            .filter(|v| v.rate != 0)
-                            .max_by_key(|v| v.rate)
-                            .map(|v| v.rate)
-                    })
-            }
-            "标清" => {
-                if let Some(item) = variants.iter().find(|v| v.rate == 3) {
-                    return Some(item.rate);
-                }
-                if let Some(rate) = find_by_keywords(&["超清"], true) {
-                    return Some(rate);
-                }
-                if let Some(rate) = find_by_keywords(&["流畅"], true) {
-                    return Some(rate);
-                }
-                if let Some(rate) = find_by_keywords(&["标清"], true) {
-                    return Some(rate);
-                }
-                if let Some(rate) = find_by_keywords(&["普清"], true) {
-                    return Some(rate);
-                }
-                variants
-                    .iter()
-                    .filter(|v| v.rate != 0)
-                    .min_by_key(|v| v.bit.unwrap_or(i32::MAX))
-                    .map(|v| v.rate)
-                    .or_else(|| {
-                        variants
-                            .iter()
-                            .filter(|v| v.rate != 0)
-                            .min_by_key(|v| v.rate)
-                            .map(|v| v.rate)
-                    })
-            }
-            _ => {
-                if let Some(rate) = find_by_keywords(&[canonical], false) {
-                    return Some(rate);
-                }
-                None
-            }
+        match (app_result, web_result) {
+            (Ok(app), Ok(web)) => {
+                let app_better = quality_policy::returned_rate_is_better(app.actual_rate, web.actual_rate, &info.variants);
+                if app_better { Ok(app) } else { Ok(web) }
+            },
+            (Ok(app), Err(_)) => Ok(app),
+            (_, Ok(web)) => Ok(web),
+            (_, Err(e)) => Err(e.into()),
         }
     }
+}
+
+pub async fn get_playback(room_id: &str, quality: &str, cdn: Option<&str>, prefer_hevc: bool, route: usize) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
+    let douyu = DouYu::new(room_id).await?;
+    douyu.get_playback(quality, cdn, prefer_hevc, route).await
 }
 
 pub async fn get_stream_url(

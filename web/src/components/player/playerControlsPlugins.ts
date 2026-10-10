@@ -243,7 +243,7 @@ export class QualityControl extends Plugin {
 
     if (typeof document !== 'undefined') {
       this.handleDocumentClick = (event: MouseEvent) => {
-        if (!this.root.contains(event.target as Node)) {
+        if (!this.root?.contains(event.target as Node)) {
           this.hideDropdown();
         }
       };
@@ -316,7 +316,7 @@ export class QualityControl extends Plugin {
   updateLabel(label: string) {
     const textEl = this.find('.quality-label') as HTMLElement | null;
     if (textEl) {
-      textEl.textContent = label;
+      textEl.textContent = typeof this.config.getDisplayLabel === 'function' ? this.config.getDisplayLabel() : label;
     }
     this.updateActiveState(label);
   }
@@ -333,7 +333,7 @@ export class QualityControl extends Plugin {
   private createDropdown() {
     this.dropdown = document.createElement('div');
     this.dropdown.className = 'xgplayer-quality-dropdown';
-    this.root.appendChild(this.dropdown);
+    this.root?.appendChild(this.dropdown);
     this.populateDropdown();
   }
 
@@ -348,11 +348,12 @@ export class QualityControl extends Plugin {
       btn.type = 'button';
       btn.className = 'xgplayer-quality-item';
       btn.innerHTML = `
-        <span class="quality-name">${option}</span>
+        <span class="quality-name"></span>
         <svg class="quality-check" width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M3 6.5l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `;
+      btn.querySelector('.quality-name')!.textContent = String(option);
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
         event.preventDefault();
@@ -398,7 +399,7 @@ export class QualityControl extends Plugin {
       this.hoverCloseTimer = null;
     }
     this.dropdown.classList.add('show');
-    this.root.classList.add('menu-open');
+    this.root?.classList.add('menu-open');
     this.updateActiveState(this.getCurrent());
   }
 
@@ -410,7 +411,7 @@ export class QualityControl extends Plugin {
     if (this.dropdown) {
       this.dropdown.classList.remove('show');
     }
-    this.root.classList.remove('menu-open');
+    this.root?.classList.remove('menu-open');
   }
 
   private updateActiveState(current: string) {
@@ -494,7 +495,7 @@ export class LineControl extends Plugin {
 
     if (typeof document !== 'undefined') {
       this.handleDocumentClick = (event: MouseEvent) => {
-        if (!this.root.contains(event.target as Node)) {
+        if (!this.root?.contains(event.target as Node)) {
           this.hideDropdown();
         }
       };
@@ -601,7 +602,7 @@ export class LineControl extends Plugin {
   private createDropdown() {
     this.dropdown = document.createElement('div');
     this.dropdown.className = 'xgplayer-line-dropdown';
-    this.root.appendChild(this.dropdown);
+    this.root?.appendChild(this.dropdown);
     this.populateDropdown();
   }
 
@@ -617,11 +618,12 @@ export class LineControl extends Plugin {
       btn.className = 'xgplayer-quality-item';
       btn.dataset.lineKey = option.key;
       btn.innerHTML = `
-        <span class="quality-name">${option.label}</span>
+        <span class="quality-name"></span>
         <svg class="quality-check" width="12" height="12" viewBox="0 0 12 12" fill="none">
           <path d="M3 6.5l2 2 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
       `;
+      btn.querySelector('.quality-name')!.textContent = String(option.label);
       btn.addEventListener('click', (event) => {
         event.stopPropagation();
         event.preventDefault();
@@ -667,7 +669,7 @@ export class LineControl extends Plugin {
       this.hoverCloseTimer = null;
     }
     this.dropdown.classList.add('show');
-    this.root.classList.add('menu-open');
+    this.root?.classList.add('menu-open');
     this.updateActiveState(this.getCurrentKey());
   }
 
@@ -679,7 +681,7 @@ export class LineControl extends Plugin {
     if (this.dropdown) {
       this.dropdown.classList.remove('show');
     }
-    this.root.classList.remove('menu-open');
+    this.root?.classList.remove('menu-open');
   }
 
   private updateActiveState(currentKey: string) {

@@ -2,6 +2,7 @@
 
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
+import { moveFollowedStreamer } from "@/services/followOrder";
 
 export type Platform = "DOUYU" | "DOUYIN" | "HUYA" | "BILIBILI";
 
@@ -10,6 +11,10 @@ export type FollowedStreamer = {
   platform: Platform;
   nickname: string;
   avatarUrl: string;
+  coverUrl?: string;
+  hidden?: boolean;
+  lastCheckedAt?: number;
+  refreshError?: boolean;
   roomTitle?: string;
   currentRoomId: string;
   liveStatus: "UNKNOWN" | "LIVE" | "OFFLINE";
@@ -40,6 +45,7 @@ type FollowContextValue = {
   unfollowStreamer: (platform: Platform, id: string) => void;
   updateOrder: (nextOrder: FollowListItem[]) => void;
   updateListOrder: (nextOrder: FollowListItem[]) => void;
+  moveFollowedStreamer: (sourceKey: string, targetKey: string) => void;
   createFolder: (name: string) => void;
   renameFolder: (folderId: string, name: string) => void;
   deleteFolder: (folderId: string) => void;
@@ -132,6 +138,7 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
   const folders = useMemo(() => listOrder.filter((x): x is { type: "folder"; data: FollowFolder } => x.type === "folder").map((x) => x.data), [listOrder]);
 
   useEffect(() => {
+    const restore = () => {
     const follows = loadJson<FollowedStreamer[]>("followedStreamers", []);
     const loadedFolders = loadJson<FollowFolder[]>("followFolders", []);
     const loadedOrder = loadJson<FollowListItem[]>("followListOrder", []);
@@ -189,6 +196,10 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
 
     setListOrder(normalizeListOrder(nextOrder));
     setHydrated(true);
+    };
+    restore();
+    window.addEventListener("dtv-config-imported", restore);
+    return () => window.removeEventListener("dtv-config-imported", restore);
   }, []);
 
   useEffect(() => {
@@ -277,6 +288,7 @@ export function FollowProvider({ children }: { children: React.ReactNode }) {
       },
       updateOrder: (nextOrder) => setListOrder(normalizeListOrder(nextOrder)),
       updateListOrder: (nextOrder) => setListOrder(normalizeListOrder(nextOrder)),
+      moveFollowedStreamer: (sourceKey, targetKey) => setFollowedStreamers(prev => moveFollowedStreamer(prev, sourceKey, targetKey)),
 
       createFolder: (name) => {
         const trimmed = (name || "").trim();

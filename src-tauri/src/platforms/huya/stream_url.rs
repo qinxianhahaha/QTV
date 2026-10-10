@@ -39,11 +39,13 @@ pub struct HuyaUnifiedResponse {
     pub title: Option<String>,
     pub nick: Option<String>,
     pub avatar: Option<String>,
+    pub cover_url: Option<String>,
     pub introduction: Option<String>,
     pub profileRoom: Option<String>,
     pub is_live: bool,
     pub flv_tx_urls: Vec<HuyaUnifiedStreamEntry>,
     pub selected_url: Option<String>,
+    pub selected_line: Option<String>,
 }
 
 fn md5_hex(input: &str) -> String {
@@ -594,6 +596,7 @@ struct RoomDetail {
     title: Option<String>,
     nick: Option<String>,
     avatar180: Option<String>,
+    cover_url: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -652,6 +655,7 @@ fn extract_room_detail(profile: &Value) -> RoomDetail {
             title: None,
             nick: None,
             avatar180: None,
+            cover_url: None,
         };
     }
 
@@ -696,6 +700,7 @@ fn extract_room_detail(profile: &Value) -> RoomDetail {
         title,
         nick,
         avatar180,
+        cover_url: data.pointer("/liveData/screenshot").and_then(|v| v.as_str()).map(str::to_string),
     }
 }
 
@@ -928,9 +933,18 @@ fn build_flv_tx_urls(base_url: &str, hd: i32, sd: i32) -> Vec<HuyaUnifiedStreamE
 
 #[tauri::command]
 pub async fn get_huya_unified_cmd(
+    room_id: String, quality: Option<String>, line: Option<String>, route: Option<usize>,
+    follow_http: State<'_, FollowHttpClient>,
+) -> Result<HuyaUnifiedResponse, String> {
+    tokio::time::timeout(std::time::Duration::from_secs(25), get_huya_unified_cmd_inner(room_id, quality, line, route, follow_http)).await
+        .map_err(|_| "获取直播流超时，请检查网络后重试".to_string())?
+}
+
+async fn get_huya_unified_cmd_inner(
     room_id: String,
     quality: Option<String>,
     line: Option<String>,
+    route: Option<usize>,
     follow_http: State<'_, FollowHttpClient>,
 ) -> Result<HuyaUnifiedResponse, String> {
     let client = &follow_http.0.inner;
@@ -964,25 +978,30 @@ pub async fn get_huya_unified_cmd(
                 title: detail.title.clone(),
                 nick: detail.nick.clone(),
                 avatar: detail.avatar180.clone(),
+                cover_url: detail.cover_url.clone(),
                 introduction: None,
                 profileRoom: None,
                 is_live: detail.status || web_stream.is_live,
                 flv_tx_urls: Vec::new(),
                 selected_url: None,
+                selected_line: None,
             });
         }
     };
 
+    let selected_index = (selected_index + route.unwrap_or(0)) % web_stream.candidates.len();
     let Some(selected_candidate) = web_stream.candidates.get(selected_index) else {
         return Ok(HuyaUnifiedResponse {
             title: detail.title.clone(),
             nick: detail.nick.clone(),
             avatar: detail.avatar180.clone(),
+            cover_url: detail.cover_url.clone(),
             introduction: None,
             profileRoom: None,
             is_live: detail.status || web_stream.is_live,
             flv_tx_urls: Vec::new(),
             selected_url: None,
+            selected_line: None,
         });
     };
 
@@ -1028,11 +1047,13 @@ pub async fn get_huya_unified_cmd(
         title: detail.title.clone(),
         nick: detail.nick.clone(),
         avatar: detail.avatar180.clone(),
+        cover_url: detail.cover_url.clone(),
         introduction: None,
         profileRoom: None,
         is_live,
         flv_tx_urls: tx_entries,
         selected_url: Some(selected_url),
+        selected_line: Some(selected_candidate.cdn.clone()),
     })
 }
 #[allow(dead_code)]

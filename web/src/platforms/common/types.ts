@@ -110,10 +110,13 @@ export interface CommonCategoryGroup {
 
 // 描述一个可用的播放流变体（与后端保持一致）
 export interface StreamVariant {
+  fps?: number | null;
+  codec?: string | null;
   url: string;
   format?: string | null;
   desc?: string | null;
   qn?: number | null;
+  requested_qn?: number | null;
   protocol?: string | null;
 }
 

@@ -148,7 +148,7 @@ export class DanmuSettingsControl extends Plugin {
 
     if (typeof document !== 'undefined') {
       this.handleDocumentClick = (event: MouseEvent) => {
-        if (!this.root.contains(event.target as Node)) {
+        if (!this.root?.contains(event.target as Node)) {
           this.closePanel();
         }
       };
@@ -224,14 +224,14 @@ export class DanmuSettingsControl extends Plugin {
         <div class="settings-body">
           <div class="settings-row settings-row-color">
             <span class="settings-label">颜色</span>
-            <input class="danmu-setting-color" type="color" value="${this.currentSettings.color}">
+            <input class="danmu-setting-color" type="color" value="#ffffff">
           </div>
           <div class="settings-row settings-row-color">
             <span class="settings-label">描边</span>
-            <input class="danmu-setting-stroke-color" type="color" value="${this.currentSettings.strokeColor}">
+            <input class="danmu-setting-stroke-color" type="color" value="#444444">
           </div>
           <div class="settings-row">
-            <label>字体 <span class="settings-value font-size-value">${this.currentSettings.fontSize}</span></label>
+            <label>字体 <span class="settings-value font-size-value"></span></label>
             <input class="danmu-setting-font-range" type="range" min="14" max="30" step="2" value="${parseInt(this.currentSettings.fontSize, 10)}">
           </div>
           <div class="settings-row">
@@ -249,7 +249,7 @@ export class DanmuSettingsControl extends Plugin {
         </div>
       </div>
     `;
-    this.root.appendChild(this.panel);
+    this.root?.appendChild(this.panel);
 
     this.panel.addEventListener('click', (event) => {
       event.stopPropagation();
@@ -377,7 +377,7 @@ export class DanmuSettingsControl extends Plugin {
     }
     this.isOpen = true;
     this.panel.classList.add('show');
-    this.root.classList.add('menu-open');
+    this.root?.classList.add('menu-open');
     this.updateInputs();
   }
 
@@ -391,7 +391,7 @@ export class DanmuSettingsControl extends Plugin {
     }
     this.isOpen = false;
     this.panel.classList.remove('show');
-    this.root.classList.remove('menu-open');
+    this.root?.classList.remove('menu-open');
   }
 
   private updateInputs() {
@@ -587,7 +587,7 @@ export class DanmuKeywordBlockControl extends Plugin {
         <div class="block-hint">关键词对所有平台生效</div>
       </div>
     `;
-    this.root.appendChild(this.panel);
+    this.root?.appendChild(this.panel);
 
     this.panel.addEventListener('click', (event) => event.stopPropagation());
     this.panel.addEventListener('pointerdown', (event) => event.stopPropagation());
@@ -662,7 +662,7 @@ export class DanmuKeywordBlockControl extends Plugin {
     }
     this.isOpen = true;
     this.panel.classList.add('show');
-    this.root.classList.add('menu-open');
+    this.root?.classList.add('menu-open');
     this.updateUi();
     if (focusInput) {
       try {
@@ -679,7 +679,7 @@ export class DanmuKeywordBlockControl extends Plugin {
     }
     this.isOpen = false;
     this.panel.classList.remove('show');
-    this.root.classList.remove('menu-open');
+    this.root?.classList.remove('menu-open');
   }
 
   private updateUi() {

@@ -15,7 +15,7 @@ export interface DouyinRustDanmakuPayload {
   fans_club_level: number; // from Rust's i32
 }
 
-export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality: string = '原画'): Promise<{ 
+export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality: string = '原画', route = 0, allowHevc = false): Promise<{
   streamUrl: string | null;
   streamType: string | undefined; 
   title?: string | null; 
@@ -24,6 +24,9 @@ export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality:
   isLive: boolean; 
   normalizedRoomId?: string | null;
   webRid?: string | null;
+  actualQuality?: string;
+  sourceFps?: number | null;
+  sourceCodec?: string | null;
   initialError: string | null; // Made non-optional, will always be string or null
 }> {
   if (!roomId) {
@@ -42,7 +45,7 @@ export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality:
 
   const payloadData = { args: { room_id_str: roomId } };
   const backendQuality = normalizeDouyinQuality(quality);
-  const MAX_ATTEMPTS = 2; // 最多重试一次
+  const MAX_ATTEMPTS = 1; // App-level recovery owns the retry budget.
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -50,6 +53,7 @@ export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality:
       const result = await invoke<LiveStreamInfo>('get_douyin_live_stream_url_with_quality', {
         payload: payloadData,
         quality: backendQuality,
+        route, allowHevc,
       });
 
       const errorMsg = (result.error_message || '').trim();
@@ -111,22 +115,13 @@ export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality:
       }
 
       const sanitizedStreamUrl = enforceHttps(rawStreamUrl);
-      let streamType: string | undefined = undefined;
-
-      if (rawStreamUrl.startsWith('http://127.0.0.1') && rawStreamUrl.endsWith('/live.flv')) {
-        streamType = 'flv';
-      } else if (rawStreamUrl.includes('pull-hls') || rawStreamUrl.endsWith('.m3u8')) {
-        console.warn(`[DouyinPlayerHelper] Received HLS-like stream URL (${rawStreamUrl}), but expected flv. Overriding to flv.`);
-        streamType = 'flv';
-      } else if (rawStreamUrl.includes('pull-flv') || rawStreamUrl.includes('.flv')) {
-        streamType = 'flv';
-      } else {
-        console.warn(`[DouyinPlayerHelper] Could not determine stream type for URL: ${rawStreamUrl}. Defaulting to flv.`);
-        streamType = 'flv';
-      }
+      const selected = result.available_streams?.find(v => v.url === result.upstream_url || v.url === rawStreamUrl);
+      const streamType = selected?.format === 'hls' || rawStreamUrl.includes('.m3u8') ? 'hls' : 'flv';
 
       return {
         streamUrl: sanitizedStreamUrl,
+        actualQuality: selected?.desc || '画质待确认',
+        sourceFps: selected?.fps, sourceCodec: selected?.codec,
         streamType,
         title: result.title,
         anchorName: result.anchor_name,
@@ -148,7 +143,7 @@ export async function fetchAndPrepareDouyinStreamConfig(roomId: string, quality:
           isLive: false,
           normalizedRoomId: null,
           webRid: null,
-          initialError: e?.message || '获取直播信息失败: 未知错误',
+          initialError: String(e?.message || e || '获取直播信息失败'),
         };
       }
       await new Promise((resolve) => setTimeout(resolve, 450));

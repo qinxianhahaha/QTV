@@ -20,8 +20,8 @@ export const DANMU_AREA_OPTIONS = [0.25, 0.5, 0.75] as const;
 export const DANMU_OPACITY_MIN = 0.2;
 export const DANMU_OPACITY_MAX = 1;
 export const PLAYER_VOLUME_STORAGE_KEY = 'dtv_player_volume_v1';
-export const DEFAULT_DANMU_FONT_FAMILY = '"OPPO Sans", "Microsoft YaHei", "PingFang SC", "Helvetica Neue", Arial, sans-serif';
-export const WINDOWS_DANMU_FONT_FAMILY = '"OPPO Sans", "Microsoft YaHei", "Segoe UI", sans-serif';
+export const DEFAULT_DANMU_FONT_FAMILY = '"PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif';
+export const WINDOWS_DANMU_FONT_FAMILY = '"Microsoft YaHei", "Segoe UI", sans-serif';
 
 export type DanmuKeywordBlockPreferences = {
   enabled: boolean;
@@ -143,6 +143,14 @@ export const persistStoredVolume = (volume: number) => {
   }
 };
 
+export const sanitizeDanmuColor = (value: unknown, fallback: string): string =>
+  typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
+
+export const sanitizeDanmuFontSize = (value: unknown): string => {
+  const size = typeof value === 'string' && /^\d+(?:px)?$/.test(value) ? parseInt(value, 10) : 20;
+  return `${Math.min(30, Math.max(14, size))}px`;
+};
+
 export const loadDanmuPreferences = (): { enabled: boolean; settings: DanmuUserSettings } | null => {
   if (typeof window === 'undefined' || !window.localStorage) {
     return null;
@@ -160,10 +168,10 @@ export const loadDanmuPreferences = (): { enabled: boolean; settings: DanmuUserS
     return {
       enabled: typeof parsed.enabled === 'boolean' ? parsed.enabled : true,
       settings: {
-        color: typeof settings.color === 'string' ? settings.color : '#ffffff',
-        strokeColor: typeof settings.strokeColor === 'string' ? settings.strokeColor : '#444444',
-        fontSize: typeof settings.fontSize === 'string' ? settings.fontSize : '20px',
-        duration: Number.isFinite(settings.duration) ? settings.duration : 10000,
+        color: sanitizeDanmuColor(settings.color, '#ffffff'),
+        strokeColor: sanitizeDanmuColor(settings.strokeColor, '#444444'),
+        fontSize: sanitizeDanmuFontSize(settings.fontSize),
+        duration: Number.isFinite(settings.duration) ? Math.min(20000, Math.max(3000, settings.duration)) : 10000,
         area: Number.isFinite(settings.area) ? sanitizeDanmuArea(settings.area) : 0.5,
         mode: settings.mode === 'top' || settings.mode === 'bottom' ? settings.mode : 'scroll',
         opacity: Number.isFinite(settings.opacity) ? sanitizeDanmuOpacity(settings.opacity) : 1,

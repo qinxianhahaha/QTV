@@ -7,7 +7,7 @@ pub fn init() {
     let default_filter = if cfg!(debug_assertions) {
         // Avoid extremely chatty dependency logs like:
         // `DEBUG hyper::proto::h1::decode ...`
-        "info,dtv=debug,dtv_lib=debug"
+        "info,qtv=debug,qtv_lib=debug"
     } else {
         "info"
     };

@@ -24,7 +24,7 @@ fn merge_bilibili_cookies(
         let name = cookie.name().to_string();
         let domain_matches = cookie
             .domain()
-            .map(|d| d.contains("bilibili.com"))
+            .map(|d| crate::network_policy::domain_matches(d.trim_start_matches('.'), "bilibili.com"))
             .unwrap_or_else(|| name.to_ascii_lowercase().contains("bili"));
 
         if !domain_matches {
@@ -162,11 +162,25 @@ pub async fn bootstrap_bilibili_cookie(
     tokio::time::sleep(Duration::from_secs(3)).await;
 
     let result =
-        collect_cookie_from_labels(app_handle.clone(), vec![label.clone()], url.clone()).await?;
+        collect_cookie_from_labels(app_handle.clone(), vec![label.clone()], url.clone()).await;
 
     if let Some(window) = app_handle.get_webview_window(&label) {
         let _ = window.close();
     }
 
-    Ok(result)
+    result
+}
+
+#[tauri::command]
+pub async fn clear_bilibili_cookie(app_handle: AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<(), String> {
+        for window in app_handle.webview_windows().values() {
+            for cookie in window.cookies().map_err(|e| e.to_string())? {
+                if cookie.domain().is_some_and(|d| crate::network_policy::domain_matches(d.trim_start_matches('.'), "bilibili.com")) {
+                    window.delete_cookie(cookie).map_err(|e| e.to_string())?;
+                }
+            }
+        }
+        Ok(())
+    }).await.map_err(|e| e.to_string())?
 }

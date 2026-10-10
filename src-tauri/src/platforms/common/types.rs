@@ -31,9 +31,12 @@ pub struct GetStreamUrlPayload {
 // 描述一个可用的播放流变体（用于调试/导出所有地址）
 #[derive(Serialize, Clone, Debug)]
 pub struct StreamVariant {
+    pub fps: Option<f64>,
+    pub codec: Option<String>,
     pub url: String,
     pub format: Option<String>,   // e.g. flv, ts, mp4
     pub desc: Option<String>,     // e.g. 原画/高清
+    pub requested_qn: Option<i32>,
     pub qn: Option<i32>,          // B 站的清晰度编号
     pub protocol: Option<String>, // e.g. http, https, ws/hls
 }
@@ -45,6 +48,7 @@ pub struct LiveStreamInfo {
     pub title: Option<String>,
     pub anchor_name: Option<String>,
     pub avatar: Option<String>,
+    pub cover_url: Option<String>,
     pub stream_url: Option<String>,
     pub status: Option<i32>,
     pub error_message: Option<String>,

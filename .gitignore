@@ -10,7 +10,6 @@ out
 # Rust
 target/
 **/*.rs.bk
-Cargo.lock
 .cargo/
 src-tauri/gen/android/
 src-tauri/keys/private.key
@@ -40,3 +39,13 @@ pnpm-debug.log*
 
 # Cloudflare Worker (local only)
 cf-worker-version/
+
+# Private runtime / release output
+.env
+.env.*
+!.env.example
+*.dmg
+*.app/
+*.p12
+*.mobileprovision
+release/

@@ -15,6 +15,7 @@ pub struct DouyuFollowInfo {
     room_name: Option<String>,
     nickname: Option<String>,
     avatar_url: Option<String>,
+    cover_url: Option<String>,
     video_loop: Option<i64>,
     show_status: Option<i64>,
 }
@@ -24,6 +25,7 @@ pub async fn fetch_douyu_room_info(
     room_id: String,
     follow_http: State<'_, FollowHttpClient>,
 ) -> Result<DouyuFollowInfo, String> {
+    if room_id.is_empty() || room_id.len() > 64 || !room_id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-') { return Err("Invalid Douyu room ID".into()); }
     let mut headers = HeaderMap::new();
     headers.insert(
         "Accept",
@@ -117,6 +119,7 @@ pub async fn fetch_douyu_room_info(
         room_name: get_str(room_data, "room_name"),
         nickname: get_str(room_data, "nickname"),
         avatar_url: avatar_final_url,
+        cover_url: get_str(room_data, "room_pic").or_else(|| get_str(room_data, "room_src")),
         video_loop: get_i64(room_data, "videoLoop"),
         show_status: get_i64(room_data, "show_status"),
     };

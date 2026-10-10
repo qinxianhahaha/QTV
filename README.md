@@ -1,105 +1,149 @@
 <div align="center">
-  <img src="images/icon.png" alt="DTV" width="128">
-  <h1>DTV</h1>
-  <p>基于 Tauri 2.0 的跨平台斗鱼、虎牙、抖音、bilibili直播桌面客户端</p>
+  <img src="images/icon.png" width="112" alt="QTV：长着翅膀的电视">
+  <h1>QTV</h1>
+  <p><strong>打开，就是你关注的直播。</strong></p>
+  <p>为 Mac 打造的轻量直播播放器 · 斗鱼 / 虎牙 / 抖音 / 哔哩哔哩</p>
+  <p>
+    <a href="https://github.com/qinxianhahaha/QTV/releases/latest">下载 macOS 安装包</a> ·
+    <a href="#安装">安装方式</a> ·
+    <a href="#从源码构建">从源码构建</a> ·
+    <a href="https://github.com/qinxianhahaha/QTV/issues">反馈问题</a>
+  </p>
 </div>
 
-<p align="center">
-  <a href="https://apps.microsoft.com/detail/9mt8kdt169xf?referrer=appbadge&mode=direct">
-    <img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200" alt="Download DTV from Microsoft Store">
-  </a>
-</p>
+QTV 基于 [DTV](https://github.com/chen-zeong/DTV) 改进，保留多平台直播能力，把「我关注的人」放在首页。它适合已经知道自己想看谁、希望少一点干扰的 Mac 用户。
 
-## 说明
+## 看自己关注的
 
-> 支持本项目？可以前往底部 [打赏](#打赏)  
-> 安卓版本：[`dtv_mobile`](https://github.com/chen-zeong/dtv_mobile)
+- **关注即首页**：开播中的主播集中显示，未开播的主播保持紧凑排列；搜索、刷新和管理收在顶部。
+- **顺序由你决定**：在管理里上移、下移或置顶。眼睛按钮可以隐藏主播，关注关系仍然保留。
+- **三分钟刷新一次**：后台自动检查开播状态；播放直播、窗口不可见时暂停不必要的刷新。
+- **抖音链接直接打开**：支持房间号、`live.douyin.com/...` 和 `douyin.com/follow/live/...` 的完整链接。短链接暂不支持自动展开。
 
-1. 本项目基于 Tauri 2.0 开发，体积小，占用率低，实测可以在双核、4GB内存的电脑上流畅运行
-2. 平台接口可能有访问频率限制，过于频繁的请求会触发验证码校验，建议合理使用搜索功能
-3. 本项目仅供学习编程目的使用，未进行任何逆向工程
-4. 本项目所有的直播版权都归属各个平台
+![深色关注首页](docs/screenshots/home-dark.png)
 
-### 支持平台
+## 大屏看，也能小窗陪着你
 
-| 平台       | 直播流 | 弹幕  | 搜索   |
-| -------- | --- | --- | ---- |
-| 斗鱼       | ✅   | ✅   | ✅    |
-| 虎牙       | ✅   | ✅   | ✅    |
-| bilibili | ✅   | ✅   | ✅    |
-| 抖音       | ✅   | ✅   | 仅房间号 |
+打开直播先沿用主界面大小。点击右上角缩小按钮后进入小窗，小窗的右上角对齐点击位置；靠近屏幕边缘时自动保持在可见区域。可以置顶，关闭直播后主界面恢复原先大小并回到屏幕中央。
 
-## 功能
+主界面和小窗都保持 **16:9**。鼠标离开或停止操作后，主播信息和控制栏自动隐藏。信息面板可查看实际分辨率、流标注帧率、实测播放帧率、编码、线路、缓冲与丢帧；点击面板外即可收起。
 
-- 📺 平台支持：支持斗鱼、虎牙、bilibili、抖音直播
-- 💬 弹幕显示：实时显示直播间弹幕，只显示聊天弹幕，不显示礼物等其他类型弹幕
-- ⭐ 主播收藏：支持收藏喜欢的主播，支持收藏列表手动拖拽排序
-- 🔁 数据同步：支持局域网一键同步或者json文件手动同步，可以与桌面端或者移动端同步数据
-- 📋 支持平台：Mac(Intel+Arm)，Windows(Win7需要自行安装Webview2)，Linux(包括Ubuntu和各类发行版)
-- 🌓 主题切换：支持明暗主题切换
-
-## 软件截图
-
-
-
-<div align="center">
-  <p>日间模式</p>
-  <img src="images/iShot_light.webp" alt="win-日间模式" style="width: 100%; max-width: 800px; display: block; margin-left: auto; margin-right: auto;">
-</div>
-
-<br>
-
-<div align="center">
-  <p>夜间模式</p>
-  <img src="images/iShot_dark.webp" alt="mac-夜间模式" style="width: 100%; max-width: 800px; display: block; margin-left: auto; margin-right: auto;">
-</div>
-
-<br>
-
-<div align="center">
-  <p>日间模式 - 播放器页面</p>
-  <img src="images/iShot_light2.webp" alt="日间模式播放器页面" style="width: 100%; max-width: 800px; display: block; margin-left: auto; margin-right: auto;">
-</div>
-
-<br>
-
-## 安装方式
-
-可以在 [release](https://github.com/chen-zeong/dtv/releases) 目录下载对应系统的安装包, 也可以通过源码编译安装
-
-## 编译
-
-```bash
-安装protobuf
-
-# 克隆项目
-git clone https://github.com/c-zeong/dtv.git
-cd dtv
-
-# 安装依赖
-pnpm install
-
-# 开发调试
-pnpm tauri dev
-
-# 打包构建
-pnpm tauri build      # 构建当前系统的安装包
-
-# 打包 ARM64 版本（Intel Mac 上交叉编译）
-pnpm tauri build --target aarch64-apple-darwin
+```mermaid
+flowchart LR
+    A[关注首页 · 16:9] -->|打开直播| B[沿用主界面大小播放]
+    B -->|点击右上角缩小| C[16:9 小窗 · 可置顶]
+    C -->|关闭直播| D[恢复原大小 · 回到屏幕中央]
 ```
 
-## 参考
+## 明暗两色，保持克制
 
-- 斗鱼直播流获取参考了 [@wbt5/real-url](https://github.com/wbt5/real-url)  
-- 抖音弹幕参考了[@saermart/DouyinLiveWebFetcher](https://github.com/saermart/DouyinLiveWebFetcher)
-- 虎牙参考了https://github.com/liuchuancong/pure_live https://github.com/ihmily/DouyinLiveRecorder
-- b站弹幕参考了https://github.com/xfgryujk/blivedm
+黑白双翼电视图标，柔和的状态标记，适配不同窗口尺寸。切换明暗主题时尽量避免文字反色闪烁。
 
-## 打赏
+![浅色关注首页](docs/screenshots/home-light.png)
 
-软件完全免费，如果这个项目对你有帮助，欢迎打赏支持：
+在管理列表里调整顺序，或用眼睛按钮暂时隐藏。
 
-<div align="center">
-  <img src="images/wechat.jpg" alt="微信赞赏码" width="260">
-</div>
+![关注排序与隐藏](docs/screenshots/follow-management.png)
+
+> 介绍图使用演示关注数据，不包含个人订阅、登录信息或真实直播内容。
+
+## 在 DTV 基础上做了哪些调整
+
+| 方向 | QTV 的调整 |
+| --- | --- |
+| 日常入口 | 默认进入关注首页，顶部集中搜索与管理，减少重复标题 |
+| 关注管理 | 优先级排序、隐藏但不取关、取消关注后撤销 |
+| Mac 窗口 | 原生 16:9 约束、小窗置顶、点击位置锚定、退出小窗居中恢复 |
+| 播放界面 | 自适应居中的主播信息、自动隐藏控制、点击空白收起播放信息 |
+| 清晰度 | B 站增加匿名播放网关候选；斗鱼比较网页与客户端实际返回的档位；抖音解析结构化高清流；虎牙使用接口返回的新鲜签名地址 |
+| 播放资源 | Mac 优先原生 HLS；受控缓冲；只在信息面板打开时采样帧率；隐藏弹幕时停止不必要工作 |
+| 稳定性 | 有上限的重试、同档位换线、会话取消与串行切换，避免旧请求覆盖新直播 |
+| 安全与维护 | 独立应用标识、受限本地代理、随机配对码、导出排除登录凭据、依赖升级与回归测试 |
+
+**关于“最高画质”**：QTV 会选择当前接口实际提供、设备可播放的最高候选。接口标注的“原画”不一定等于主播上传的源画质；平台、房间、账号权限和网络均可能限制结果。以播放信息里的实际视频尺寸为准，不承诺每个直播间都能匿名获得 1080p60、2K 或 120 帧。
+
+硬件能力允许时才优先尝试高效 HEVC；失败后回到 AVC。原生 HLS 有助于减少转封装开销，但不能保证所有设备或直播间的功耗、温度都降低。
+
+## 安装
+
+面向 **macOS 12 或更新版本**。Apple Silicon 和 Intel 安装包分别提供；macOS 版本较旧时，部分直播编码可能不可用。
+
+### DMG 安装（推荐）
+
+1. 打开 [Releases](https://github.com/qinxianhahaha/QTV/releases/latest)。
+2. M 系列芯片下载 `QTV_版本号_aarch64.dmg`；Intel Mac 下载 `QTV_版本号_x64.dmg`。
+3. 打开 DMG，将 **QTV** 拖到 **Applications / 应用程序**。
+4. 从应用程序启动 QTV。
+
+当前社区构建采用 ad-hoc 签名，**尚未经过 Apple Developer ID 签名和公证**。首次启动若被 macOS 拦截，请先核对下载来源和校验值，再按 [Apple 官方说明](https://support.apple.com/102445) 在“系统设置 → 隐私与安全性”中选择“仍要打开”。不需要关闭系统整体安全保护。
+
+Release 同时提供 ZIP 和 `SHA256SUMS.txt`。校验示例：
+
+```sh
+shasum -a 256 ~/Downloads/QTV_1.0.0_aarch64.dmg
+```
+
+将输出与同一 Release 的 `SHA256SUMS.txt` 对照。
+
+### Homebrew
+
+本仓库自带 Cask，通过自定义 tap 安装：
+
+```sh
+brew tap qinxianhahaha/qtv https://github.com/qinxianhahaha/QTV
+brew install --cask qinxianhahaha/qtv/qtv
+```
+
+更新：
+
+```sh
+brew update
+brew upgrade --cask qinxianhahaha/qtv/qtv
+```
+
+这不是 Homebrew 官方仓库中的 Cask；下载仍来自本项目 GitHub Releases。
+
+### 从 DTV 迁移
+
+QTV 使用独立的应用标识，可与 DTV 共存。先在 DTV 的数据同步中导出 JSON，再到 QTV 的数据同步中导入即可。关注、分组及弹幕设置会合并；登录状态需要重新登录。不要把含有个人配置的导出文件提交到 GitHub。
+
+局域网同步仅在主动开启时运行，每次生成随机配对码。另一台 QTV 可以粘贴完整共享链接，或输入 IP 和配对码；关闭同步窗口即停止共享。它使用局域网 HTTP，请只在可信网络中使用。
+
+## 从源码构建
+
+需要 macOS、Xcode Command Line Tools、Node.js 22 LTS、pnpm 11、Rust（含项目指定的 nightly）、Protobuf。安装过依赖后可跳过对应命令。
+
+```sh
+xcode-select --install
+brew install node@22 pnpm rustup protobuf pkg-config
+export PATH="$(brew --prefix node@22)/bin:$HOME/.cargo/bin:$PATH"
+rustup default stable
+
+# 获取源码
+git clone https://github.com/qinxianhahaha/QTV.git
+cd QTV
+pnpm install --frozen-lockfile
+
+# 单元测试与类型检查
+pnpm check
+
+# 启动开发环境
+pnpm tauri dev
+
+# 构建当前 Mac 架构的 .app 和 .dmg
+pnpm tauri build --bundles app,dmg
+```
+
+构建结果位于 `src-tauri/target/release/bundle/`。`src-tauri/rust-toolchain.toml` 指定后端工具链；第一次构建会下载 Rust 组件和 V8 预编译库。需要几分钟，并占用数 GB 空间。
+
+跨架构构建与发布流程见 [开发说明](docs/DEVELOPMENT.md)。常见问题见 [FAQ](docs/FAQ.md)。本次检查范围、测试结果和已知限制见 [发布审查记录](docs/RELEASE_REVIEW.md)。
+
+## 技术与许可
+
+Tauri 2 · Rust · Next.js / React · 系统 WebView · xgplayer。
+
+QTV 按 **[AGPL-3.0](LICENSE)** 开源，原 DTV 的 MIT 声明保留在 [LICENSES/DTV-MIT.txt](LICENSES/DTV-MIT.txt)。项目继承的抖音签名脚本来自 AGPL-3.0 项目，因此没有将整个派生作品简单标为 MIT。各组件的来源和许可见 [第三方说明](THIRD_PARTY_NOTICES.md)。
+
+感谢 [DTV](https://github.com/chen-zeong/DTV)、[biliup](https://github.com/biliup/biliup)、[DouyinLiveWebFetcher](https://github.com/saermart/DouyinLiveWebFetcher)、[blivedm](https://github.com/xfgryujk/blivedm) 及相关开源项目。
+
+QTV 不提供直播内容，与各直播平台无隶属关系。直播、头像和平台商标属于各自权利人；使用时请遵守对应平台规则。

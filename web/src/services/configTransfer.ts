@@ -1,5 +1,5 @@
-export const DTV_CONFIG_KIND = 'dtv-config';
-export const DTV_CONFIG_VERSION = 1;
+export const QTV_CONFIG_KIND = 'qtv-config';
+export const QTV_CONFIG_VERSION = 1;
 
 type ConfigSource = {
   appVersion?: string | null;
@@ -8,16 +8,15 @@ type ConfigSource = {
 
 export type PortableConfigEntries = Record<string, string>;
 
-export interface DtvConfigPayload {
-  kind: typeof DTV_CONFIG_KIND;
-  version: typeof DTV_CONFIG_VERSION;
+export interface QtvConfigPayload {
+  kind: typeof QTV_CONFIG_KIND;
+  version: typeof QTV_CONFIG_VERSION;
   exportedAt: string;
   source: ConfigSource;
   entries: PortableConfigEntries;
 }
 
 const EXACT_EXPORTABLE_KEYS = new Set<string>([
-  'bilibili_cookie',
   'danmu_block_keywords',
   'dtv_custom_categories_v1',
   'dtv_danmu_preferences_v1',
@@ -73,10 +72,10 @@ export const collectPortableConfigEntries = (storage: Storage): PortableConfigEn
 export const createPortableConfigPayload = (
   storage: Storage,
   source: Partial<ConfigSource> = {},
-): DtvConfigPayload => {
+): QtvConfigPayload => {
   return {
-    kind: DTV_CONFIG_KIND,
-    version: DTV_CONFIG_VERSION,
+    kind: QTV_CONFIG_KIND,
+    version: QTV_CONFIG_VERSION,
     exportedAt: new Date().toISOString(),
     source: {
       client: source.client ?? 'desktop',
@@ -86,7 +85,7 @@ export const createPortableConfigPayload = (
   };
 };
 
-export const parsePortableConfigPayload = (raw: string): DtvConfigPayload => {
+export const parsePortableConfigPayload = (raw: string): QtvConfigPayload => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
@@ -98,11 +97,11 @@ export const parsePortableConfigPayload = (raw: string): DtvConfigPayload => {
     throw new Error('Config file format is invalid.');
   }
 
-  if (parsed.kind !== DTV_CONFIG_KIND) {
-    throw new Error('This is not a DTV config export.');
+  if (parsed.kind !== QTV_CONFIG_KIND && parsed.kind !== 'dtv-config') {
+    throw new Error('This is not a QTV/DTV config export.');
   }
 
-  if (parsed.version !== DTV_CONFIG_VERSION) {
+  if (parsed.version !== QTV_CONFIG_VERSION) {
     throw new Error(`Unsupported config file version: ${String(parsed.version)}.`);
   }
 
@@ -127,8 +126,8 @@ export const parsePortableConfigPayload = (raw: string): DtvConfigPayload => {
   });
 
   return {
-    kind: DTV_CONFIG_KIND,
-    version: DTV_CONFIG_VERSION,
+    kind: QTV_CONFIG_KIND,
+    version: QTV_CONFIG_VERSION,
     exportedAt: parsed.exportedAt,
     source: {
       client: parsed.source.client,
@@ -159,5 +158,5 @@ const pad = (value: number) => String(value).padStart(2, '0');
 export const buildPortableConfigFileName = (now = new Date()): string => {
   const datePart = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
   const timePart = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  return `dtv-config-${datePart}-${timePart}.json`;
+  return `qtv-config-${datePart}-${timePart}.json`;
 };

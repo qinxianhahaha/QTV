@@ -12,21 +12,22 @@ use std::net::TcpListener;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::State;
+use rand::{distributions::Alphanumeric, Rng};
 
-pub const LAN_SYNC_KIND: &str = "dtv-lan-sync";
+pub const LAN_SYNC_KIND: &str = "qtv-lan-sync";
 pub const LAN_SYNC_VERSION: u32 = 1;
 pub const LAN_SYNC_PORT: u16 = 38999;
-pub const LAN_SYNC_MDNS_SERVICE_TYPE: &str = "_dtv-lan-sync._tcp.local.";
+pub const LAN_SYNC_MDNS_SERVICE_TYPE: &str = "_qtv-lan-sync._tcp.local.";
 pub const LAN_SYNC_HTTP_PATH: &str = "/dtv-sync";
 
-fn fixed_token() -> String {
-    std::env::var("DTV_LAN_SYNC_TOKEN").unwrap_or_else(|_| "dtv".to_string())
+fn new_token() -> String {
+    rand::thread_rng().sample_iter(&Alphanumeric).take(32).map(char::from).collect()
 }
 
 fn normalize_token_value(raw: Option<String>) -> String {
     let trimmed = raw.unwrap_or_default().trim().to_string();
     if trimmed.is_empty() {
-        return fixed_token();
+        return String::new();
     }
     if let Some(rest) = trimmed.strip_prefix("token=") {
         let v = rest.trim();
@@ -83,7 +84,7 @@ pub struct LanSyncServerInfo {
 }
 
 #[derive(Default, Clone)]
-pub struct LanSyncServerState(Arc<Mutex<Option<RunningLanSync>>>);
+pub struct LanSyncServerState(Arc<Mutex<Option<RunningLanSync>>>, Arc<tokio::sync::Mutex<()>>);
 
 struct RunningLanSync {
     port: u16,
@@ -321,25 +322,24 @@ fn pick_advertise_ipv4(hosts: &[String]) -> Ipv4Addr {
 fn build_mdns_instance_name(port: u16) -> String {
     let host = std::env::var("COMPUTERNAME")
         .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_else(|_| "dtv".to_string());
+        .unwrap_or_else(|_| "qtv".to_string());
     let sanitized = host
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
         .collect::<String>();
-    format!("dtv-sync-{}-{}", sanitized, port)
+    format!("qtv-sync-{}-{}", sanitized, port)
 }
 
-fn start_mdns_advertise(port: u16, hosts: &[String], token: &str) -> Option<MdnsRegistration> {
+fn start_mdns_advertise(port: u16, hosts: &[String]) -> Option<MdnsRegistration> {
     let daemon = ServiceDaemon::new().ok()?;
     let instance = build_mdns_instance_name(port);
     let host_name = format!("{instance}.local.");
     let ip = pick_advertise_ipv4(hosts);
 
-    let props: [(&str, &str); 4] = [
+    let props: [(&str, &str); 3] = [
         ("kind", LAN_SYNC_KIND),
         ("ver", "1"),
         ("path", LAN_SYNC_HTTP_PATH),
-        ("token", token),
     ];
 
     let info = ServiceInfo::new(
@@ -362,7 +362,7 @@ fn start_mdns_advertise(port: u16, hosts: &[String], token: &str) -> Option<Mdns
 }
 
 async fn stop_running(running: RunningLanSync) {
-    running.handle.stop(true).await;
+    running.handle.stop(false).await;
     if let Some(mdns) = running.mdns {
         let _ = mdns.daemon.unregister(&mdns.fullname);
         let _ = mdns.daemon.shutdown();
@@ -371,9 +371,10 @@ async fn stop_running(running: RunningLanSync) {
 
 #[tauri::command]
 pub async fn lan_sync_start_server(
-    payload: LanSyncPayload,
+    mut payload: LanSyncPayload,
     state: tauri::State<'_, LanSyncServerState>,
 ) -> Result<LanSyncServerInfo, String> {
+    let _operation = state.1.lock().await;
     if payload.kind != LAN_SYNC_KIND {
         return Err("Invalid payload kind.".to_string());
     }
@@ -381,13 +382,19 @@ pub async fn lan_sync_start_server(
         return Err(format!("Unsupported payload version: {}", payload.version));
     }
 
+    // Defense in depth: sharing never exposes login credentials or arbitrary localStorage keys.
+    const KEYS: &[&str] = &["followedStreamers", "followFolders", "followListOrder", "dtv_custom_categories_v1", "danmu_block_keywords", "dtv_danmu_preferences_v1"];
+    payload.entries.retain(|key, _| KEYS.contains(&key.as_str()));
+    if payload.entries.values().map(String::len).sum::<usize>() > 5 * 1024 * 1024 {
+        return Err("Shared configuration is too large".into());
+    }
     let previous = state.0.lock().unwrap().take();
     if let Some(prev) = previous {
         stop_running(prev).await;
     }
 
     let port = LAN_SYNC_PORT;
-    let token = fixed_token();
+    let token = new_token();
     let bind_once = || TcpListener::bind(("0.0.0.0", port));
     let listener = match bind_once() {
         Ok(l) => l,
@@ -425,6 +432,7 @@ pub async fn lan_sync_start_server(
             .service(dtv_sync_manifest)
             .service(dtv_sync_payload)
     })
+    .workers(1)
     .listen(listener)
     .map_err(|e| format!("Failed to start server: {}", e))?
     .run();
@@ -433,7 +441,7 @@ pub async fn lan_sync_start_server(
     tokio::spawn(server);
 
     let hosts = build_hosts();
-    let mdns = start_mdns_advertise(port, &hosts, &token);
+    let mdns = start_mdns_advertise(port, &hosts);
 
     *state.0.lock().unwrap() = Some(RunningLanSync {
         port,
@@ -448,6 +456,7 @@ pub async fn lan_sync_start_server(
 
 #[tauri::command]
 pub async fn lan_sync_stop_server(state: tauri::State<'_, LanSyncServerState>) -> Result<(), String> {
+    let _operation = state.1.lock().await;
     let running = state.0.lock().unwrap().take();
     if let Some(running) = running {
         stop_running(running).await;
@@ -465,11 +474,6 @@ pub async fn lan_sync_status(
         hosts: r.hosts.clone(),
         token: r.token.clone(),
     }))
-}
-
-#[tauri::command]
-pub async fn lan_sync_token() -> Result<String, String> {
-    Ok(fixed_token())
 }
 
 #[tauri::command]
@@ -493,7 +497,7 @@ pub async fn lan_sync_discover(timeout_ms: Option<u64>) -> Result<Vec<LanSyncDis
             let port = info.get_port();
             let fullname = info.get_fullname();
             let name = fullname.split('.').next().unwrap_or(fullname).to_string();
-            let token = info.get_property("token").map(|s| s.to_string());
+            let token = None; // Pairing secret is never advertised over mDNS.
 
             let mut host_ip: Option<String> = None;
 
@@ -555,6 +559,7 @@ pub async fn lan_sync_fetch_manifest(
         return Err("baseUrl is empty.".to_string());
     }
     let token = normalize_token_value(token);
+    if token.is_empty() { return Err("请输入共享端显示的配对码或完整共享链接".into()); }
     let url = format!("{}/dtv-sync?token={}", base, urlencoding::encode(&token));
 
     let resp = client
@@ -562,7 +567,7 @@ pub async fn lan_sync_fetch_manifest(
         .timeout(Duration::from_millis(3000))
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch manifest: {e}"))?;
+        .map_err(|_| "无法连接共享端".to_string())?;
 
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();
@@ -584,6 +589,7 @@ pub async fn lan_sync_fetch_payload(
         return Err("baseUrl is empty.".to_string());
     }
     let token = normalize_token_value(token);
+    if token.is_empty() { return Err("请输入共享端显示的配对码或完整共享链接".into()); }
     let url = format!(
         "{}/dtv-sync/payload?token={}",
         base,
@@ -595,7 +601,7 @@ pub async fn lan_sync_fetch_payload(
         .timeout(Duration::from_millis(5000))
         .send()
         .await
-        .map_err(|e| format!("Failed to fetch payload: {e}"))?;
+        .map_err(|_| "无法连接共享端".to_string())?;
 
     let status = resp.status();
     let text = resp.text().await.unwrap_or_default();

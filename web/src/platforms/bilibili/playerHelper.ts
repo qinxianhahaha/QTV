@@ -10,7 +10,8 @@ export async function getBilibiliStreamConfig(
   roomId: string,
   quality: string = '原画',
   cookie?: string,
-): Promise<{ streamUrl: string, streamType: string | undefined }> {
+  route = 0,
+): Promise<{ streamUrl: string, streamType: string | undefined, actualQuality: string, qualityLimited: boolean, sourceFps?: number | null, sourceCodec?: string | null }> {
   if (!roomId) {
     throw new Error('房间ID未提供');
   }
@@ -18,7 +19,7 @@ export async function getBilibiliStreamConfig(
   // 若未显式传入 cookie，则尝试从 localStorage 读取，以确保最高画质可用
   const effectiveCookie = cookie ?? (typeof localStorage !== 'undefined' ? (localStorage.getItem('bilibili_cookie') || undefined) : undefined);
 
-  const MAX_ATTEMPTS = 2; // 最多重试一次
+  const MAX_ATTEMPTS = 1; // App-level recovery owns the retry budget.
   let result: LiveStreamInfo | null = null;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
@@ -26,6 +27,7 @@ export async function getBilibiliStreamConfig(
         payload: payloadData,
         quality,
         cookie: effectiveCookie || null,
+        route,
       });
       result = fetched;
 
@@ -35,7 +37,7 @@ export async function getBilibiliStreamConfig(
         if (msg.includes('未开播')) {
           throw new Error(msg);
         }
-        throw new Error('主播未开播或无法获取直播流');
+        throw new Error(msg);
       }
 
       // 根据返回的状态判断是否在线（B 站约定 status === 1 为在线）
@@ -50,13 +52,13 @@ export async function getBilibiliStreamConfig(
 
       break;
     } catch (e: any) {
-      const msg = (e?.message || '').trim();
+      const msg = String(e?.message || e || '获取B站直播流失败').trim();
       const looksOffline = msg.includes('未开播') || msg.includes('房间不存在') || msg.includes('不存在');
       if (looksOffline) {
-        throw new Error(msg || '主播未开播或无法获取直播流');
+        throw new Error(msg || '获取B站直播流失败');
       }
       if (attempt >= MAX_ATTEMPTS) {
-        throw new Error(msg || '主播未开播或无法获取直播流');
+        throw new Error(msg || '获取B站直播流失败');
       }
       await new Promise((resolve) => setTimeout(resolve, 450));
     }
@@ -135,7 +137,10 @@ export async function getBilibiliStreamConfig(
     streamType = 'flv';
   }
 
-  return { streamUrl, streamType };
+  const selected = result.available_streams?.find(v => v.url === result.upstream_url || v.url === streamUrl);
+  const actualQuality = selected?.desc || '画质待确认';
+  const qualityLimited = selected?.qn != null && selected.requested_qn != null && selected.qn < selected.requested_qn;
+  return { streamUrl, streamType, actualQuality, qualityLimited, sourceFps: selected?.fps, sourceCodec: selected?.codec };
 }
 
 // 统一的 Rust 弹幕事件负载（与 Douyin/Douyu/Huya 保持一致）
