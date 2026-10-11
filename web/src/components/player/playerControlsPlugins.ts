@@ -720,3 +720,52 @@ export class LineControl extends Plugin {
     root.style.display = options.length === 0 ? 'none' : '';
   }
 }
+
+
+export class FollowRoomControl extends Plugin {
+  static override pluginName = 'followRoomControl';
+  static override defaultConfig = {
+    position: POSITIONS.CONTROLS_LEFT,
+    index: 2.5,
+    onSwitch: null as ((direction: -1 | 1) => void) | null,
+    canSwitch: (() => false) as (direction: -1 | 1) => boolean,
+  };
+  private handlers: Array<[HTMLButtonElement, (event: Event) => void]> = [];
+
+  override render() {
+    return `<xg-icon class="xgplayer-follow-room-control">
+      <button type="button" data-direction="-1" title="上一个关注的直播间" aria-label="上一个关注的直播间">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 15 6-6 6 6"/></svg>
+      </button>
+      <button type="button" data-direction="1" title="下一个关注的直播间" aria-label="下一个关注的直播间">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+    </xg-icon>`;
+  }
+
+  override afterCreate() {
+    for (const direction of [-1, 1] as const) {
+      const button = this.find(`[data-direction="${direction}"]`) as HTMLButtonElement | null;
+      if (!button) continue;
+      const handler = (event: Event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.config.canSwitch(direction)) this.config.onSwitch?.(direction);
+      };
+      button.addEventListener('click', handler);
+      this.handlers.push([button, handler]);
+    }
+    this.updateAvailability();
+  }
+
+  updateAvailability() {
+    for (const [button] of this.handlers) {
+      button.disabled = !this.config.canSwitch(Number(button.dataset.direction) as -1 | 1);
+    }
+  }
+
+  override destroy() {
+    for (const [button, handler] of this.handlers) button.removeEventListener('click', handler);
+    this.handlers = [];
+  }
+}

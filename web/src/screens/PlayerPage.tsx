@@ -16,11 +16,13 @@ function toPlatformEnum(p: string): Platform {
 export function PlayerPage({
   platform,
   roomId,
-  onRequestClose
+  onRequestClose,
+  onRequestSwitch
 }: {
   platform: string;
   roomId: string;
   onRequestClose?: () => void;
+  onRequestSwitch?: (room: { platform: string; roomId: string }) => void;
 }) {
   const plat = useMemo(() => toPlatformEnum(platform), [platform]);
   if (!roomId) {
@@ -30,5 +32,5 @@ export function PlayerPage({
       </div>
     );
   }
-  return <MainPlayer platform={plat} roomId={roomId} onRequestClose={onRequestClose} />;
+  return <MainPlayer platform={plat} roomId={roomId} onRequestClose={onRequestClose} onRequestSwitch={onRequestSwitch} />;
 }

@@ -33,7 +33,7 @@ export function usePlayerOverlay() {
 }
 
 export function PlayerOverlayHost() {
-  const { isOpen, platform, roomId, closePlayer } = usePlayerOverlay();
+  const { isOpen, platform, roomId, closePlayer, openPlayer } = usePlayerOverlay();
 
   // Unmount immediately: an exit animation used to delay native window restoration
   // and animate a decoding video while the home page was laid out at mini size.
@@ -43,7 +43,7 @@ export function PlayerOverlayHost() {
         <div className={styles.overlayRoot}>
           <button type="button" className={styles.backdrop} aria-label="关闭播放器" onClick={closePlayer} />
           <div className={styles.overlayPanel}>
-            <PlayerPage platform={platform} roomId={roomId} onRequestClose={closePlayer} />
+            <PlayerPage platform={platform} roomId={roomId} onRequestClose={closePlayer} onRequestSwitch={openPlayer} />
           </div>
         </div>
       ) : null}

@@ -40,6 +40,7 @@ import { useImageProxy } from "@/hooks/useImageProxy";
 import { useFollow, type FollowedStreamer, type Platform as FollowPlatform } from "@/state/follow/FollowProvider";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
 import { createSerialTaskQueue } from "@/services/serialTaskQueue";
+import { adjacentFollowRoom } from "@/services/followNavigation";
 import { isConfirmedOfflineError } from "@/services/playerError";
 import { LIVE_HLS_OPTIONS, withHlsTimerCleanup } from "@/services/livePlaybackPolicy";
 
@@ -190,11 +191,13 @@ function resolveCurrentLineFor(options: LineOption[], currentLine: string | null
 export function MainPlayer({
   platform,
   roomId,
-  onRequestClose
+  onRequestClose,
+  onRequestSwitch
 }: {
   platform: Platform;
   roomId: string;
   onRequestClose?: () => void;
+  onRequestSwitch?: (room: { platform: string; roomId: string }) => void;
 }) {
   const router = useRouter();
   const follow = useFollow();
@@ -213,6 +216,17 @@ export function MainPlayer({
   const activeSessionIdRef = useRef(0);
   const sessionSeqRef = useRef(0);
   const mountGenRef = useRef(0);
+
+  const followRoomPluginRef = useRef<any>(null);
+  const navigationRef = useRef({ follows: follow.followedStreamers, platform, roomId, onRequestSwitch });
+  navigationRef.current = { follows: follow.followedStreamers, platform, roomId, onRequestSwitch };
+  const switchPendingRef = useRef(false);
+  useEffect(() => {
+    switchPendingRef.current = false;
+  }, [platform, roomId]);
+  useEffect(() => {
+    followRoomPluginRef.current?.updateAvailability();
+  }, [platform, roomId, follow.followedStreamers]);
 
   const refreshPluginRef = useRef<any>(null);
   const volumePluginRef = useRef<any>(null);
@@ -641,6 +655,7 @@ export function MainPlayer({
     playerRef.current = null;
     playbackKindRef.current = null;
 
+    followRoomPluginRef.current = null;
     refreshPluginRef.current = null;
     volumePluginRef.current = null;
     danmuTogglePluginRef.current = null;
@@ -860,7 +875,7 @@ export function MainPlayer({
       const FlvPlugin: any = (flvMod as any)?.default ?? flvMod;
       const HlsPlugin: any = hlsMod ? withHlsTimerCleanup((hlsMod as any).default ?? hlsMod) : null;
       const { applyDanmuOverlayPreferences, createDanmuOverlay, syncDanmuEnabledState } = overlayMod as any;
-      const { DanmuKeywordBlockControl, DanmuSettingsControl, DanmuToggleControl, LineControl, QualityControl, RefreshControl, VolumeControl } =
+      const { FollowRoomControl, DanmuKeywordBlockControl, DanmuSettingsControl, DanmuToggleControl, LineControl, QualityControl, RefreshControl, VolumeControl } =
         pluginsMod as any;
 
       const playerOptions: any = {
@@ -985,6 +1000,24 @@ export function MainPlayer({
         onClick: () => void reloadStreamRef.current?.("refresh")
       });
 
+      followRoomPluginRef.current = player.registerPlugin?.(FollowRoomControl, {
+        canSwitch: (direction: -1 | 1) => {
+          const nav = navigationRef.current;
+          return !switchPendingRef.current && !!adjacentFollowRoom(nav.follows, nav.platform, nav.roomId, direction);
+        },
+        onSwitch: (direction: -1 | 1) => {
+          const nav = navigationRef.current;
+          if (switchPendingRef.current) return;
+          const target = adjacentFollowRoom(nav.follows, nav.platform, nav.roomId, direction);
+          if (!target) return;
+          switchPendingRef.current = true;
+          followRoomPluginRef.current?.updateAvailability();
+          const next = { platform: target.platform.toLowerCase(), roomId: target.id };
+          if (nav.onRequestSwitch) nav.onRequestSwitch(next);
+          else router.replace(`/player?${new URLSearchParams(next)}`);
+        }
+      });
+
       volumePluginRef.current = player.registerPlugin?.(VolumeControl, {
         position: POSITIONS.CONTROLS_LEFT,
         index: 3
@@ -1069,7 +1102,7 @@ export function MainPlayer({
       await startDanmaku(sessionId, overlay, platform, backendRoomId, filterRoomId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentLine, currentQuality, danmuSettings, isDanmuEnabled, isSessionActive, lineOptions, platform, roomId, startDanmaku]
+    [currentLine, currentQuality, danmuSettings, isDanmuEnabled, isSessionActive, lineOptions, platform, roomId, router, startDanmaku]
   );
 
   const reloadStream = useCallback(
@@ -1276,6 +1309,10 @@ export function MainPlayer({
 
   useEffect(() => {
     disposedRef.current = false;
+    setPlayerTitle(null);
+    setPlayerAnchorName(null);
+    setPlayerAvatar(null);
+    setPlayerIsLive(null);
     destroyPlayer();
     void reloadStream("refresh");
     // eslint-disable-next-line react-hooks/exhaustive-deps
