@@ -10,3 +10,8 @@ md-5 = "0.10.6"
 url = "2"
 brotlic = "0.8"
 flate2 = "1"
+
+actix-web = { version = "4", default-features = false, features = ["macros"] }
+futures-util = "0.3"
+reqwest = { version = "0.12", features = ["stream", "gzip", "brotli"] }
+tokio = { version = "1", features = ["full"] }

@@ -48,7 +48,8 @@ pub async fn fetch_three_cate(tag_id: i32) -> Result<Vec<CommonPlatformCategoryR
         tag_id_str
     );
 
-    match reqwest::get(&url).await {
+    match reqwest::Client::builder().no_proxy().timeout(std::time::Duration::from_secs(15))
+        .build().map_err(|e| e.to_string())?.get(&url).send().await {
         Ok(response) => {
             if response.status().is_success() {
                 let body_text = response

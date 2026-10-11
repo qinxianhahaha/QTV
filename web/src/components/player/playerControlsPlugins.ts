@@ -22,10 +22,10 @@ export class VolumeControl extends Plugin {
       return '';
     }
     return `<xg-icon class="xgplayer-volume-control" title="音量/静音切换">
-      <div class="volume-icon">
+      <button type="button" class="volume-icon" aria-label="静音" aria-pressed="false">
         ${ICONS.volume2}
-      </div>
-      <input class="volume-slider" type="range" min="0" max="100" step="1" value="100">
+      </button>
+      <input class="volume-slider" aria-label="音量" type="range" min="0" max="100" step="1" value="100">
       <span class="volume-value">100%</span>
     </xg-icon>`;
   }
@@ -52,6 +52,8 @@ export class VolumeControl extends Plugin {
       }
       if (this.volumeIcon) {
         this.volumeIcon.setAttribute('data-muted', clamped === 0 ? 'true' : 'false');
+        this.volumeIcon.setAttribute('aria-pressed', clamped === 0 ? 'true' : 'false');
+        this.volumeIcon.setAttribute('aria-label', clamped === 0 ? '取消静音' : '静音');
       }
     };
 

@@ -55,6 +55,7 @@ impl HttpClient {
         let cookie_jar = Arc::new(Jar::default());
 
         let client_builder = Client::builder()
+            .no_proxy()
             // Some platforms' HTTPS endpoints occasionally fail ALPN/HTTP2 negotiation in certain
             // network environments; HTTP/1.1 is more compatible and is enough for these APIs.
             .http1_only()

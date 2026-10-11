@@ -1,0 +1,4 @@
+# The legacy Huya TARS codec declares an obsolete nightly feature. Permit that
+# crate alone to compile on stable Rust; do not enable unstable APIs in QTV.
+[env]
+RUSTC_BOOTSTRAP = "tars_stream"

@@ -1,5 +1,6 @@
 use crate::platforms::common::http_client::HttpClient;
 use crate::platforms::douyin::a_bogus::generate_a_bogus;
+use crate::platforms::douyin::quality_policy;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT_ENCODING, COOKIE, REFERER, USER_AGENT};
 use serde_json::Value;
 
@@ -143,4 +144,31 @@ pub async fn fetch_room_data(
     let web_id = normalize_douyin_live_id(raw_id);
     // 简化逻辑：直接走网页版接口 + a_bogus，避免 HTML 解析失败。
     fetch_room_from_api(http_client, &web_id, cookies).await
+}
+
+/// Validate CDN redirects with TLS verification before handing the URL to WebKit.
+/// A broken primary CDN must not prevent a working, equally sharp backup playing.
+pub async fn select_reachable_stream(
+    client: &HttpClient,
+    candidates: &[quality_policy::Candidate],
+    quality: &str,
+    route: usize,
+) -> Result<quality_policy::Candidate, String> {
+    let first = quality_policy::select(candidates, quality, route)
+        .ok_or_else(|| "主播在线，但没有可播放的视频流".to_string())?;
+    let count = candidates.iter().filter(|v| v.rank == first.rank).count();
+    for offset in 0..count.min(3) {
+        let candidate = quality_policy::select(candidates, quality, route.wrapping_add(offset)).unwrap();
+        // Drop the response immediately after receiving headers; never buffer a live stream.
+        let result = client.inner.get(&candidate.url)
+            .header(USER_AGENT, DEFAULT_USER_AGENT)
+            .header(REFERER, "https://live.douyin.com/")
+            .header(reqwest::header::RANGE, "bytes=0-1023")
+            .timeout(std::time::Duration::from_secs(4))
+            .send().await;
+        if result.is_ok_and(|response| response.status().is_success()) {
+            return Ok(candidate);
+        }
+    }
+    Err("主播在线，但当前画质的播放线路暂时不可用，请刷新或切换线路重试".into())
 }

@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pin, PinOff, Minimize2, Maximize2 } from "lucide-react";
 import { BilibiliCookieControls } from "@/components/bilibili/BilibiliCookieControls";
+import { DouyuLoginControls } from "./DouyuLoginControls";
 import { useFloatingWindow } from "./useFloatingWindow";
 import { useRouter } from "next/navigation";
 import { listen, type Event as TauriEvent } from "@tauri-apps/api/event";
@@ -689,6 +690,7 @@ export function MainPlayer({
     // Bilibili's legacy FLV fallback also owns this shared proxy, but does not
     // set either platform helper's flag.
     try { await invoke("stop_proxy"); } catch { /* already stopped */ }
+    try { await invoke("stop_direct_media"); } catch { /* already stopped */ }
   }, []);
 
   const startDanmaku = useCallback(
@@ -1145,11 +1147,15 @@ export function MainPlayer({
           }
           if (!isSessionActive(sessionId)) return;
           if (!stream.streamUrl) throw new Error("平台没有返回播放地址");
+          stream.streamUrl = await invoke<string>("prepare_direct_media_url", {
+            url: stream.streamUrl, platform: platform.toLowerCase()
+          });
+          if (!isSessionActive(sessionId)) return;
           actualQualityRef.current = stream.actualQuality || null;
           sourceInfoRef.current = { sourceFps: stream.sourceFps, sourceCodec: stream.sourceCodec };
           setActualLine(stream.actualLine || (route ? `备用线路 ${route}` : "自动"));
           if (stream.qualityLimited) {
-            setQualityNotice(`平台实际返回 ${stream.actualQuality || '较低画质'}，与所选画质不同。${platform === Platform.BILIBILI ? '可登录后重试。' : '可稍后刷新重试。'}`);
+            setQualityNotice(`平台实际返回 ${stream.actualQuality || '较低画质'}，与所选画质不同。${platform === Platform.BILIBILI || platform === Platform.DOUYU ? '可在 QTV 内登录后重试。' : '可稍后刷新重试。'}`);
           } else if (trigger === 'recovery' && effectiveQuality === '原画' && stream.actualQuality && !/原画|原始|待确认/.test(stream.actualQuality)) {
             setQualityNotice(`当前平台画质：${stream.actualQuality}。可在播放信息中查看实际分辨率。`);
           }
@@ -1471,6 +1477,7 @@ export function MainPlayer({
                     >
                       {isFollowed ? "取关" : "关注"}
                     </button>
+                    {platform === Platform.DOUYU ? <DouyuLoginControls onChanged={() => void reloadStream("refresh")} /> : null}
                   </div>
                 </div>
               </div>

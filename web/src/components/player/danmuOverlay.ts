@@ -187,8 +187,15 @@ export const createDanmuOverlay = (
     } as any);
 
     let started = false;
+    // paused becomes false as soon as play() is requested, before the first
+    // decoded frames or the player layout are ready. Do not launch bullets then.
+    let playbackReady = !media || (!media.paused && !media.ended && media.readyState >= 3);
+    let lastMediaTime = Number(media?.currentTime || 0);
+    let layoutReady = false;
+    let startupFrame: number | null = null;
+    let geometryKey = '';
     const canRender = () => !destroyed && currentEnabled && currentOpacity > 0 &&
-      document.visibilityState !== 'hidden' && !media?.paused && !media?.ended;
+      document.visibilityState !== 'hidden' && playbackReady && layoutReady && !media?.paused && !media?.ended;
     const syncPlayback = () => {
       if (destroyed) return;
       if (!canRender()) {
@@ -212,13 +219,61 @@ export const createDanmuOverlay = (
     const updateGeometry = () => {
       if (destroyed) return;
       // Read layout on size/settings changes, not on every incoming message.
+      const width = overlayHost.offsetWidth;
+      const height = overlayHost.offsetHeight;
+      const nextKey = `${width}:${height}:${currentSettings.area}:${currentSettings.fontSize}`;
+      if (nextKey === geometryKey) return;
+      geometryKey = nextKey;
       maxBullets = computeMaxBullets(overlayHost, currentSettings);
       danmu.setArea?.({ start: 0, end: sanitizeDanmuArea(currentSettings.area), lines: computeAreaLines(overlayHost, currentSettings) });
     };
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateGeometry);
+    const cancelStartup = () => {
+      if (startupFrame !== null) cancelAnimationFrame(startupFrame);
+      startupFrame = null;
+    };
+    const settleLayout = () => {
+      if (destroyed || !playbackReady || layoutReady || startupFrame !== null) return;
+      // Let the new video and its overlay commit their layout before the first
+      // CSS transitions. This runs only at startup/resume, never per bullet.
+      startupFrame = requestAnimationFrame(() => {
+        startupFrame = requestAnimationFrame(() => {
+          startupFrame = null;
+          if (destroyed || !playbackReady) return;
+          updateGeometry();
+          layoutReady = overlayHost.offsetWidth > 0 && overlayHost.offsetHeight > 0;
+          syncPlayback();
+        });
+      });
+    };
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      updateGeometry();
+      settleLayout();
+    });
     resizeObserver?.observe(overlayHost);
-    const mediaEvents = ['playing', 'pause', 'ended', 'emptied'];
-    mediaEvents.forEach(event => media?.addEventListener?.(event, syncPlayback));
+    const onMediaEvent = (event: Event) => {
+      const now = Number(media?.currentTime || 0);
+      if (event.type === 'timeupdate') {
+        // Live MSE may adjust currentTime while playing. WebKit can finish
+        // seeking without another playing event: advancing decoded media is
+        // also a valid readiness signal, and prevents a permanently blank overlay.
+        const advancing = now > lastMediaTime && !media.paused && !media.ended &&
+          !media.seeking && media.readyState >= 2;
+        lastMediaTime = now;
+        if (playbackReady || !advancing) return;
+        playbackReady = true;
+      } else {
+        lastMediaTime = now;
+        playbackReady = event.type === 'playing';
+      }
+      if (!playbackReady) {
+        cancelStartup();
+        layoutReady = false;
+      }
+      syncPlayback();
+      settleLayout();
+    };
+    const mediaEvents = ['playing', 'timeupdate', 'waiting', 'seeking', 'pause', 'ended', 'emptied'];
+    mediaEvents.forEach(event => media?.addEventListener?.(event, onMediaEvent));
     document.addEventListener('visibilitychange', syncPlayback);
 
     const overlay: DanmuOverlayInstance = {
@@ -276,9 +331,10 @@ export const createDanmuOverlay = (
       destroy: () => {
         if (destroyed) return;
         destroyed = true;
+        cancelStartup();
         resizeObserver?.disconnect();
         document.removeEventListener('visibilitychange', syncPlayback);
-        mediaEvents.forEach(event => media?.removeEventListener?.(event, syncPlayback));
+        mediaEvents.forEach(event => media?.removeEventListener?.(event, onMediaEvent));
         danmu.destroy();
         overlayHost.remove();
       },
@@ -312,6 +368,7 @@ export const createDanmuOverlay = (
       setFontSize: (size: number | string) => {
         const next = typeof size === 'string' ? parseInt(size, 10) : size;
         if (!Number.isFinite(next)) return;
+        if (destroyed || parseFontSizePx(currentSettings.fontSize) === next) return;
         currentSettings = { ...currentSettings, fontSize: `${next}px` };
         try {
           danmu.setFontSize?.(next, computeChannelSize(next));
@@ -326,6 +383,7 @@ export const createDanmuOverlay = (
       },
       setAllDuration: (_mode: string, duration: number) => {
         if (!Number.isFinite(duration) || duration <= 0) return;
+        if (destroyed || currentSettings.duration === duration) return;
         currentSettings = { ...currentSettings, duration };
         try {
           danmu.setAllDuration?.('scroll', duration);
@@ -353,6 +411,7 @@ export const createDanmuOverlay = (
       },
     };
 
+    settleLayout();
     applyDanmuOverlayPreferences(overlay, danmuSettings, isDanmuEnabled, player.root as HTMLElement);
     syncDanmuEnabledState(overlay, danmuSettings, isDanmuEnabled, player.root as HTMLElement);
 

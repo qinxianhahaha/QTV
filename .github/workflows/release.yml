@@ -14,13 +14,12 @@ jobs:
           - runner: macos-15
             arch: aarch64
             mach: arm64
-          - runner: macos-15-intel
-            arch: x64
-            mach: x86_64
     runs-on: ${{ matrix.runner }}
     env:
       MACOSX_DEPLOYMENT_TARGET: '12.0'
       HOMEBREW_NO_AUTO_UPDATE: '1'
+      RUSTUP_TOOLCHAIN: stable
+      RUSTC_BOOTSTRAP: tars_stream
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa
@@ -32,7 +31,7 @@ jobs:
           cache: pnpm
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249
         with:
-          toolchain: nightly
+          toolchain: stable
       - uses: swatinem/rust-cache@49a0bdc70d2e1b713ca9e2869b211fcce03d3c1c
         with:
           workspaces: src-tauri -> target
@@ -92,5 +91,5 @@ jobs:
           fi
           cd release
           shasum -a 256 *.dmg *.zip > SHA256SUMS.txt
-          rm SHA256SUMS-aarch64.txt SHA256SUMS-x64.txt
+          rm -f SHA256SUMS-aarch64.txt SHA256SUMS-x64.txt
           gh release upload "$TAG" ./* --clobber

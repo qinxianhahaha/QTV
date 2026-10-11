@@ -10,6 +10,7 @@ import { usePathname } from "next/navigation";
 
 import styles from "./Navbar.module.css";
 import { LanSyncModal } from "./LanSyncModal";
+import { NetworkSettings } from "./NetworkSettings";
 import { setNavSlot } from "./navSlot";
 import { searchAnchors, type SearchAnchorResult, type SearchPlatform } from "@/services/search";
 import { usePlayerUi } from "@/state/playerUi/PlayerUiProvider";
@@ -598,6 +599,8 @@ export function Navbar({
         >
           <MonitorSmartphone size={17} />
         </button>
+
+        <NetworkSettings buttonClassName={styles.navIconBtn} />
 
         <button
           type="button"

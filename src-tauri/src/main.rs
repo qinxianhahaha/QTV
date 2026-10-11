@@ -7,7 +7,6 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::oneshot;
-#[cfg(target_os = "macos")]
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 mod logging;
@@ -17,6 +16,11 @@ mod sync_transfer;
 mod platforms;
 mod proxy;
 mod network_policy;
+mod network_settings;
+mod direct_media;
+mod direct_media_transport;
+mod media_playlist;
+mod media_network_policy;
 mod version_check;
 mod window_layout;
 use platforms::common::{DouyinDanmakuState, FollowHttpClient, HuyaDanmakuState};
@@ -78,9 +82,10 @@ async fn get_stream_url_with_quality_cmd(
 }
 
 #[tauri::command]
-async fn get_douyu_playback_cmd(room_id: String, quality: String, line: Option<String>, prefer_hevc: Option<bool>, route: Option<usize>) -> Result<platforms::douyu::stream_url::DouyuPlayback, String> {
+async fn get_douyu_playback_cmd(app: tauri::AppHandle, room_id: String, quality: String, line: Option<String>, prefer_hevc: Option<bool>, route: Option<usize>) -> Result<platforms::douyu::stream_url::DouyuPlayback, String> {
     tokio::time::timeout(std::time::Duration::from_secs(30), async {
-        platforms::douyu::stream_url::get_playback(&room_id, &quality, line.as_deref(), prefer_hevc.unwrap_or(false), route.unwrap_or(0))
+        let cookie = platforms::douyu::cookie::playback_cookie(app).await?;
+        platforms::douyu::stream_url::get_playback_with_cookie(&room_id, &quality, line.as_deref(), prefer_hevc.unwrap_or(false), route.unwrap_or(0), cookie)
             .await.map_err(|e| e.to_string())
     }).await.map_err(|_| "获取斗鱼直播流超时，请检查网络后重试".to_string())?
 }
@@ -294,6 +299,7 @@ fn main() {
                 )
                 .build())
             .setup(|_app| {
+                *_app.state::<network_settings::NetworkSettingsState>().0.lock().map_err(|_| "Network settings unavailable")? = network_settings::load(_app.handle())?;
                 // Apply macOS vibrancy to the main window when running on macOS
                 #[cfg(target_os = "macos")]
                 {
@@ -326,6 +332,8 @@ fn main() {
                 Ok(())
             })
             .manage(client) // Manage the reqwest client
+            .manage(network_settings::NetworkSettingsState::default())
+            .manage(direct_media::DirectMediaState::default())
             .manage(follow_http_client) // 专用关注刷新客户端，避免占用默认连接池
             .manage(DouyuDanmakuHandles::default()) // Manage new DouyuDanmakuHandles
             .manage(DouyinDanmakuState::default()) // Manage DouyinDanmakuState
@@ -337,11 +345,19 @@ fn main() {
             .manage(platforms::bilibili::state::BilibiliState::default())
             .manage(lan_sync::LanSyncServerState::default())
             .invoke_handler(tauri::generate_handler![
+                network_settings::get_network_settings,
+                network_settings::set_network_settings,
+                direct_media::prepare_direct_media_url,
+                direct_media::stop_direct_media,
                 get_stream_url_cmd,
                 set_playback_aspect,
                 set_playback_layout,
                 get_stream_url_with_quality_cmd,
             get_douyu_playback_cmd,
+            platforms::douyu::cookie::open_douyu_login,
+            platforms::douyu::cookie::get_douyu_login_status,
+            platforms::douyu::cookie::close_douyu_login,
+            platforms::douyu::cookie::clear_douyu_login,
                 set_stream_url_cmd,
                 search_anchor,
                 config_transfer::save_config_export,

@@ -444,6 +444,26 @@
   display: block;
 }
 
+.xgplayer-volume-control .volume-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.xgplayer-volume-control .volume-icon:focus-visible {
+  outline: 2px solid #c8cdd5;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.xgplayer-volume-control .volume-icon[data-muted="true"] { opacity: .5; }
+
 .xgplayer-volume-control .volume-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -2484,6 +2504,19 @@ video.xgplayer-video {
 
 /* Let 16:9 mini windows shrink below the legacy 320px video minimum. */
 .player-page .video-player { min-height: 0; }
+
+/* xgplayer hides both control grids below its mini breakpoint. Keep audio usable. */
+.player-page .xgplayer .mini-controls .xg-left-grid {
+  display: flex;
+  flex-wrap: nowrap;
+}
+@media (max-width: 640px) {
+  .player-page .xgplayer-left-cluster { gap: 4px; padding: 2px 6px; }
+  .player-page .xgplayer-controls-left { gap: 4px; flex-wrap: nowrap; }
+  .player-page .xgplayer-volume-control { display: inline-flex !important; flex-shrink: 0; margin: 0; gap: 4px; padding: 0; }
+  .player-page .xgplayer-volume-control .volume-slider { width: 64px; }
+  .player-page .xgplayer-volume-control .volume-value { display: none; }
+}
 
 .bilibili-quality-notice { position: absolute; z-index: 25; top: 86px; left: 50%; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); display: flex; align-items: center; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px 12px; border-radius: 12px; color: #eee; background: rgba(20,20,20,.86); font-size: 12px; }
 .player-chrome-hidden .bilibili-quality-notice { opacity: 0; pointer-events: none; }

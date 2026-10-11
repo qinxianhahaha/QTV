@@ -1,0 +1,18 @@
+.dialog { width: min(520px, calc(100vw - 48px)); max-height: calc(100vh - 48px); margin: auto; padding: 24px; border: 1px solid var(--border); border-radius: 18px; background: var(--bg-primary); color: var(--text-primary); box-shadow: 0 18px 70px #0004; }
+.dialog::backdrop { background: #0005; }
+.heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+.heading h2 { font-size: 18px; font-weight: 650; margin: 0; }
+.heading button { display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 8px; color: var(--text-secondary); background: var(--bg-tertiary); cursor: pointer; }
+.row { display: flex; align-items: center; gap: 20px; }
+.row > div { flex: 1; min-width: 0; }
+.row strong { font-size: 14px; line-height: 1.6; }
+.row p, .hint { font-size: 12px; color: var(--text-secondary); line-height: 1.8; margin: 8px 0; }
+.hint { margin-top: 18px; }
+.switch { flex-shrink: 0; width: 44px; height: 26px; border: 1px solid var(--border); border-radius: 20px; padding: 3px; background: var(--bg-tertiary); cursor: pointer; }
+.switch span { display: block; width: 18px; height: 18px; border-radius: 50%; background: var(--text-secondary); transition: transform 150ms ease; }
+.switch[aria-checked="true"] { background: var(--text-primary); }
+.switch[aria-checked="true"] span { transform: translateX(17px); background: var(--bg-primary); }
+.switch:disabled { opacity: .5; cursor: wait; }
+.dialog button:focus-visible { outline: 2px solid var(--text-primary); outline-offset: 3px; }
+.status { min-height: 20px; margin: 20px 0 0; font-size: 12px; color: var(--text-secondary); }
+@media (prefers-reduced-motion: reduce) { .switch span { transition: none; } }

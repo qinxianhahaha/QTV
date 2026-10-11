@@ -62,11 +62,23 @@ flowchart LR
 
 **关于“最高画质”**：QTV 会选择当前接口实际提供、设备可播放的最高候选。接口标注的“原画”不一定等于主播上传的源画质；平台、房间、账号权限和网络均可能限制结果。以播放信息里的实际视频尺寸为准，不承诺每个直播间都能匿名获得 1080p60、2K 或 120 帧。
 
+斗鱼使用当前官方网页播放接口获取清晰度，播放页提供“登录斗鱼”入口。浏览器的登录状态与 QTV 独立，需在 QTV 弹出的斗鱼官方登录框完成登录；登录成功后窗口自动关闭，播放器重新请求原画。登录凭据保存在本机 WebKit 中，播放请求由后端携带，不会写入配置导出。可点击“退出登录”清除 QTV 的斗鱼登录状态；即使登录后平台仍限制画质，也会显示实际返回的档位。
+
 硬件能力允许时才优先尝试高效 HEVC；失败后回到 AVC。原生 HLS 有助于减少转封装开销，但不能保证所有设备或直播间的功耗、温度都降低。
 
 ## 安装
 
 面向 **macOS 12 Monterey 或更新版本**。目前只支持 **Apple Silicon（M 系列芯片）** 的 Mac；Intel Mac 尚未测试，暂不支持。macOS 版本较旧时，部分直播编码可能不可用。
+
+### 直连播放
+
+点击右上角的 **设置**，在「网络设置」中打开 **直播直连，不使用系统代理**（默认开启）。设置保存在本机，自动保存，下次打开直播生效，无需重启。关闭后，视频恢复原有网络方式；直播信息和弹幕默认直连。
+
+直连模式将视频通过本机通道交给原播放器，HLS 播放列表、视频分片、密钥和初始化数据一起直连。不转码，不改变清晰度、帧率或硬件解码。失败时会显示播放错误，不会悄悄改走系统代理。
+
+此选项绕过系统 HTTP/SOCKS 代理，无法改变系统级 **TUN/VPN** 路由或代理软件提供的 DNS；启用全局接管时，请在代理软件中给 QTV 或直播平台配置直连规则。官方账号登录页面仍遵循系统网络设置。
+
+若系统 DNS 返回代理软件的虚拟 IP 或无法获得公网地址，视频直连通道会通过阿里公共 DNS 的 HTTPS 接口获取真实地址（仅发送 CDN 域名，不发送账号、Cookie 或完整播放链接）。TLS 验证保持开启，不修改系统 DNS 或代理配置。
 
 ### DMG 安装（推荐）
 
@@ -80,7 +92,7 @@ flowchart LR
 Release 同时提供 ZIP 和 `SHA256SUMS.txt`。校验示例：
 
 ```sh
-shasum -a 256 ~/Downloads/QTV_1.0.0_aarch64.dmg
+shasum -a 256 ~/Downloads/QTV_1.1.0_aarch64.dmg
 ```
 
 将输出与同一 Release 的 `SHA256SUMS.txt` 对照。
@@ -111,7 +123,7 @@ QTV 使用独立的应用标识，可与 DTV 共存。先在 DTV 的数据同步
 
 ## 从源码构建
 
-需要 macOS、Xcode Command Line Tools、Node.js 22 LTS、pnpm 11、rustup、Protobuf、pkg-config。Rust 工具链分两部分：`rustup default stable` 设置的 stable 用于 `pnpm check` 里的 Rust 测试；构建应用用的 nightly 由 `src-tauri/rust-toolchain.toml` 指定，第一次构建时 rustup 会自动下载，无需手动安装。安装过依赖后可跳过对应命令。
+需要 macOS、Xcode Command Line Tools、Node.js 22 LTS、pnpm 11、rustup、稳定版 Rust、Protobuf、pkg-config。安装过依赖后可跳过对应命令。项目只为旧 TARS 依赖启用局部编译兼容设置。
 
 ```sh
 xcode-select --install
@@ -131,10 +143,10 @@ pnpm check
 pnpm tauri dev
 
 # 构建当前 Mac 架构的 .app 和 .dmg
-pnpm tauri build --bundles app,dmg
+RUSTUP_TOOLCHAIN=stable RUSTC_BOOTSTRAP=tars_stream pnpm tauri build --bundles app,dmg
 ```
 
-构建结果位于 `src-tauri/target/release/bundle/`。`src-tauri/rust-toolchain.toml` 指定后端工具链（nightly）；第一次构建会下载 nightly 工具链、Rust 组件和 V8 预编译库。需要几分钟，并占用数 GB 空间。
+构建结果位于 `src-tauri/target/release/bundle/`。`src-tauri/rust-toolchain.toml` 指定后端工具链；第一次构建会下载 Rust 组件和 V8 预编译库。需要几分钟，并占用数 GB 空间。
 
 跨架构构建与发布流程见 [开发说明](docs/DEVELOPMENT.md)。常见问题见 [FAQ](docs/FAQ.md)。本次检查范围、测试结果和已知限制见 [发布审查记录](docs/RELEASE_REVIEW.md)。
 

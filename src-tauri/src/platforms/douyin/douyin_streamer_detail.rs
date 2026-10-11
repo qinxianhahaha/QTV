@@ -128,8 +128,7 @@ async fn get_douyin_live_stream_url_with_quality_inner(
             candidates = super::quality_policy::collect(&room, allow_hevc.unwrap_or(false));
         }
     }
-    let selected = super::quality_policy::select(&candidates, &quality, route.unwrap_or(0))
-        .ok_or_else(|| "主播在线，但没有可播放的视频流".to_string())?;
+    let selected = super::web_api::select_reachable_stream(&http_client, &candidates, &quality, route.unwrap_or(0)).await?;
     let available_streams = Some(candidates.iter().map(|v| StreamVariant { fps: v.fps, codec: if v.hevc { Some("h265".into()) } else { None },
         url: v.url.clone(), format: Some(v.format.clone()), desc: Some(v.label.clone()),
         qn: Some(v.rank), requested_qn: None, protocol: Some("https".into()),

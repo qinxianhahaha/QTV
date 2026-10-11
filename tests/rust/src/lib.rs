@@ -13,5 +13,18 @@ pub mod douyu_signature;
 pub mod window_layout;
 #[path = "../../../src-tauri/src/network_policy.rs"]
 pub mod network_policy;
+#[path = "../../../src-tauri/src/media_playlist.rs"]
+pub mod media_playlist;
+#[path = "../../../src-tauri/src/media_network_policy.rs"]
+pub mod media_network_policy;
 #[path = "../../../src-tauri/src/platforms/bilibili/packet.rs"]
 pub mod bilibili_packet;
+
+#[path = "../../../src-tauri/src/platforms/douyu/cookie_policy.rs"]
+pub mod douyu_cookie;
+
+#[path = "../../../src-tauri/src/platforms/douyu/web_signature.rs"]
+pub mod douyu_web_signature;
+
+#[path = "../../../src-tauri/src/direct_media_transport.rs"]
+pub mod direct_media_transport;

@@ -65,6 +65,7 @@ struct DouYu {
     did: String,
     rid: String,
     client: Client,
+    cookie: Option<String>,
 }
 
 const DEFAULT_DOUYU_CDN: &str = "ws-h5";
@@ -119,6 +120,7 @@ impl DouYu {
             did: DEFAULT_DOUYU_DID.to_string(),
             rid: rid.to_string(),
             client,
+            cookie: None,
         })
     }
 
@@ -212,22 +214,40 @@ impl DouYu {
         Ok(params)
     }
 
+    async fn build_v1_sign_params(&self, room_id: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let mut request = self.client.get("https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption")
+            .query(&[("did", self.did.as_str())])
+            .header("Referer", format!("https://www.douyu.com/{room_id}"));
+        if let Some(cookie) = &self.cookie { request = request.header("Cookie", cookie); }
+        let response: Value = request.send().await?.error_for_status()?.json().await?;
+        if response.get("error").and_then(value_to_i32) != Some(0) { return Err("斗鱼新版签名参数获取失败".into()); }
+        let data = &response["data"];
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        let auth = super::web_signature::stream_auth(data, room_id, timestamp)?;
+        let encrypted = data["enc_data"].as_str().filter(|v| !v.is_empty()).ok_or("斗鱼未返回新版签名数据")?;
+        Ok(serde_urlencoded::to_string([("enc_data", encrypted.to_string()), ("tt", timestamp.to_string()), ("did", self.did.clone()), ("auth", auth)])?)
+    }
+
     async fn get_play_qualities(
         &self,
         room_id: &str,
         sign_data: &str,
+        use_v1: bool,
         prefer_hevc: bool,
     ) -> Result<DouyuPlayInfo, Box<dyn std::error::Error>> {
         let payload = format!(
-            "{}&cdn=&rate=-1&ver=Douyu_223061205&iar=0&ive=1&hevc={}&fa=0",
-            sign_data, if prefer_hevc { 1 } else { 0 }
+            "{}&cdn=&rate=-1&ver={}&iar=0&ive=0&sov=0&hevc={}&fa=0",
+            sign_data, if use_v1 { "Douyu_new" } else { "Douyu_223061205" }, if prefer_hevc { 1 } else { 0 }
         );
-        let url = format!("https://www.douyu.com/lapi/live/getH5Play/{}", room_id);
-        let json = self
+        let endpoint = if use_v1 { "getH5PlayV1" } else { "getH5Play" };
+        let url = format!("https://www.douyu.com/lapi/live/{endpoint}/{room_id}");
+        let mut request = self
             .client
             .post(url)
             .header("Content-Type", "application/x-www-form-urlencoded")
-            .body(payload)
+            .body(payload);
+        if let Some(cookie) = &self.cookie { request = request.header("Cookie", cookie); }
+        let json = request
             .send()
             .await?
             .json::<Value>()
@@ -296,19 +316,26 @@ impl DouYu {
         &self,
         room_id: &str,
         sign_data: &str,
+        use_v1: bool,
         rate: i32,
         cdn: &str,
         prefer_hevc: bool,
         variants: &[DouyuRateVariant],
     ) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
-        let payload = format!("{}&cdn={}&rate={}&hevc={}", sign_data, cdn, rate, if prefer_hevc { 1 } else { 0 });
-        let url = format!("https://www.douyu.com/lapi/live/getH5Play/{}", room_id);
-        let json = self
+        let uid = self.cookie.as_deref().and_then(|c| cookie_value(c, "acf_uid"))
+            .filter(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit())).unwrap_or("0");
+        let mut payload = format!("{}&cdn={}&rate={}&hevc={}&ver={}&iar=0&ive=0&sov=0&fa=0", sign_data, urlencoding::encode(cdn), rate, if prefer_hevc { 1 } else { 0 }, if use_v1 { "Douyu_new" } else { "Douyu_223061205" });
+        if !use_v1 { payload.push_str(&format!("&aid=web-alone&uid={uid}")); }
+        let endpoint = if use_v1 { "getH5PlayV1" } else { "getH5Play" };
+        let url = format!("https://www.douyu.com/lapi/live/{endpoint}/{room_id}");
+        let mut request = self
             .client
             .post(url)
             .header("Content-Type", "application/x-www-form-urlencoded")
             .header("Referer", format!("https://www.douyu.com/{}", room_id))
-            .body(payload)
+            .body(payload);
+        if let Some(cookie) = &self.cookie { request = request.header("Cookie", cookie); }
+        let json = request
             .send()
             .await?
             .json::<Value>()
@@ -344,9 +371,9 @@ impl DouYu {
             } else { format!("{}/{}", rtmp_url, rtmp_live) },
             actual_quality: actual.map(|v| v.name.clone()).unwrap_or_else(|| "画质待确认".into()),
             quality_limited: actual_rate.is_some_and(|r| r != rate),
-            line: data.get("cdn").and_then(Value::as_str).unwrap_or(cdn).to_string(),
+            line: data.get("rtmp_cdn").or_else(|| data.get("cdn")).and_then(Value::as_str).unwrap_or(cdn).to_string(),
             requested_hevc: prefer_hevc,
-            requested_rate: rate, actual_rate, available_qualities: variants.to_vec(), api: "web".into(),
+            requested_rate: rate, actual_rate, available_qualities: variants.to_vec(), api: if use_v1 { "web-v1".into() } else { "web".into() },
         })
     }
 
@@ -433,12 +460,31 @@ impl DouYu {
     pub async fn get_playback(&self, quality: &str, cdn: Option<&str>, prefer_hevc: bool, route: usize) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
         let (real_room_id, is_live) = self.fetch_room_detail().await?;
         if !is_live { return Err("主播未开播".into()); }
-        let sign_data = self.build_sign_params(&real_room_id).await?;
-        let info = self.get_play_qualities(&real_room_id, &sign_data, prefer_hevc).await?;
+        let (mut sign_data, mut use_v1) = match self.build_v1_sign_params(&real_room_id).await.map_err(|e| e.to_string()) {
+            Ok(sign) => (sign, true),
+            Err(_) => (self.build_sign_params(&real_room_id).await?, false),
+        };
+        let info = match self.get_play_qualities(&real_room_id, &sign_data, use_v1, prefer_hevc).await.map_err(|e| e.to_string()) {
+            Ok(info) => info,
+            Err(_) if use_v1 => {
+                sign_data = self.build_sign_params(&real_room_id).await?;
+                use_v1 = false;
+                self.get_play_qualities(&real_room_id, &sign_data, false, prefer_hevc).await?
+            }
+            Err(error) => return Err(error.into()),
+        };
         let selected_rate = quality_policy::select(&info.variants, quality).map(|v| v.rate).unwrap_or(0);
         let primary = Self::select_cdn(cdn, &info.cdns);
         let base = info.cdns.iter().position(|v| v == &primary).unwrap_or(0);
         let selected_cdn = if info.cdns.is_empty() { primary } else { info.cdns[(base + route) % info.cdns.len()].clone() };
+        // Web login cookies belong to Douyu's web endpoint, not its anonymous app API.
+        let authenticated_web = if self.cookie.is_some() {
+            let stream = self.get_play_url(&real_room_id, &sign_data, use_v1, selected_rate, &selected_cdn, prefer_hevc, &info.variants).await.map_err(|e| e.to_string());
+            if let Ok(value) = &stream {
+                if value.actual_rate == Some(selected_rate) { return Ok(value.clone()); }
+            }
+            Some(stream)
+        } else { None };
         // H5 may only advertise its capped fallback CDN. The app endpoint has
         // its own CDN set; don't inherit that H5 restriction for the app request.
         let app_cdns = ["ws-h5", "tct-h5", "ali-h5", "hs-h5"];
@@ -450,9 +496,12 @@ impl DouYu {
         }
         // A nominally successful endpoint may have capped the stream. Compare
         // actual returned rates before accepting it, including the H5 fallback.
-        let mut web_result = self.get_play_url(&real_room_id, &sign_data, selected_rate, &selected_cdn, prefer_hevc, &info.variants).await.map_err(|e| e.to_string());
+        let mut web_result = match authenticated_web {
+            Some(result) => result,
+            None => self.get_play_url(&real_room_id, &sign_data, use_v1, selected_rate, &selected_cdn, prefer_hevc, &info.variants).await.map_err(|e| e.to_string()),
+        };
         if web_result.is_err() && prefer_hevc {
-            web_result = self.get_play_url(&real_room_id, &sign_data, selected_rate, &selected_cdn, false, &info.variants).await.map_err(|e| e.to_string());
+            web_result = self.get_play_url(&real_room_id, &sign_data, use_v1, selected_rate, &selected_cdn, false, &info.variants).await.map_err(|e| e.to_string());
         }
         match (app_result, web_result) {
             (Ok(app), Ok(web)) => {
@@ -468,6 +517,22 @@ impl DouYu {
 
 pub async fn get_playback(room_id: &str, quality: &str, cdn: Option<&str>, prefer_hevc: bool, route: usize) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
     let douyu = DouYu::new(room_id).await?;
+    douyu.get_playback(quality, cdn, prefer_hevc, route).await
+}
+
+fn cookie_value<'a>(cookie: &'a str, name: &str) -> Option<&'a str> {
+    cookie.split(';').filter_map(|part| part.trim().split_once('='))
+        .find(|(key, _)| *key == name).map(|(_, value)| value)
+}
+
+pub async fn get_playback_with_cookie(room_id: &str, quality: &str, cdn: Option<&str>, prefer_hevc: bool, route: usize, cookie: Option<String>) -> Result<DouyuPlayback, Box<dyn std::error::Error>> {
+    let mut douyu = DouYu::new(room_id).await?;
+    if let Some(value) = &cookie {
+        if let Some(did) = cookie_value(value, "dy_did").or_else(|| cookie_value(value, "acf_did")) {
+            if !did.is_empty() && did.len() <= 64 && did.bytes().all(|b| b.is_ascii_alphanumeric()) { douyu.did = did.to_string(); }
+        }
+    }
+    douyu.cookie = cookie;
     douyu.get_playback(quality, cdn, prefer_hevc, route).await
 }
 
