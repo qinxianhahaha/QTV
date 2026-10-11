@@ -2540,14 +2540,10 @@ video.xgplayer-video {
 }
 
 
-/* Follow-room navigation beside playback/refresh in every player size. */
-.xgplayer .xgplayer-follow-room-control { width: auto; height: auto; display: inline-flex; align-items: center; flex-shrink: 0; gap: 4px; margin: 0; }
-.xgplayer-follow-room-control button {
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 28px; height: 32px; padding: 0; border: 0; border-radius: 6px;
-  background: transparent; color: rgba(255,255,255,.88); cursor: pointer;
-}
-.xgplayer-follow-room-control button:hover:not(:disabled) { color: #fff; background: rgba(255,255,255,.12); }
-.xgplayer-follow-room-control button:focus-visible { outline: 2px solid var(--player-accent); outline-offset: 2px; }
-.xgplayer-follow-room-control button:disabled { opacity: .3; cursor: default; }
-.xgplayer-follow-room-control svg { pointer-events: none; }
+/* Leave room for previous/next and window actions while keeping the title centered. */
+.player-topbar { padding-inline: 132px; }
+.player-compact .player-topbar { padding-inline: 174px; }
+.floating-actions button { cursor: pointer; }
+.floating-actions button:disabled { cursor: default; }
+.floating-actions button:hover:not(:disabled) { background: rgba(45,45,48,.9); }
+.floating-actions button:focus-visible { outline: 2px solid var(--player-accent); outline-offset: 2px; }

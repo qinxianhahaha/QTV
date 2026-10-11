@@ -26,7 +26,6 @@ function groupPrimaryControls(root: HTMLElement) {
 
   const playEl = leftControls.querySelector(".xgplayer-play");
   const refreshEl = leftControls.querySelector(".xgplayer-refresh-control");
-  const followRoomEl = leftControls.querySelector(".xgplayer-follow-room-control");
   const volumeEl = leftControls.querySelector(".xgplayer-volume-control");
   if (!playEl && !refreshEl && !volumeEl) return;
 
@@ -37,7 +36,7 @@ function groupPrimaryControls(root: HTMLElement) {
     leftControls.insertBefore(cluster, leftControls.firstChild);
   }
 
-  [playEl, refreshEl, followRoomEl, volumeEl].forEach((element) => {
+  [playEl, refreshEl, volumeEl].forEach((element) => {
     if (element instanceof HTMLElement && element.parentElement !== cluster) {
       cluster!.appendChild(element);
     }

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pin, PinOff, Minimize2, Maximize2 } from "lucide-react";
+import { Pin, PinOff, Minimize2, Maximize2, ChevronUp, ChevronDown } from "lucide-react";
 import { BilibiliCookieControls } from "@/components/bilibili/BilibiliCookieControls";
 import { DouyuLoginControls } from "./DouyuLoginControls";
 import { useFloatingWindow } from "./useFloatingWindow";
@@ -217,16 +217,25 @@ export function MainPlayer({
   const sessionSeqRef = useRef(0);
   const mountGenRef = useRef(0);
 
-  const followRoomPluginRef = useRef<any>(null);
-  const navigationRef = useRef({ follows: follow.followedStreamers, platform, roomId, onRequestSwitch });
-  navigationRef.current = { follows: follow.followedStreamers, platform, roomId, onRequestSwitch };
   const switchPendingRef = useRef(false);
+  const [isSwitchingRoom, setIsSwitchingRoom] = useState(false);
+  const previousFollow = adjacentFollowRoom(follow.followedStreamers, platform, roomId, -1);
+  const nextFollow = adjacentFollowRoom(follow.followedStreamers, platform, roomId, 1);
   useEffect(() => {
     switchPendingRef.current = false;
+    setIsSwitchingRoom(false);
   }, [platform, roomId]);
-  useEffect(() => {
-    followRoomPluginRef.current?.updateAvailability();
-  }, [platform, roomId, follow.followedStreamers]);
+
+  const switchFollowRoom = (direction: -1 | 1) => {
+    if (switchPendingRef.current) return;
+    const target = adjacentFollowRoom(follow.followedStreamers, platform, roomId, direction);
+    if (!target) return;
+    switchPendingRef.current = true;
+    setIsSwitchingRoom(true);
+    const next = { platform: target.platform.toLowerCase(), roomId: target.id };
+    if (onRequestSwitch) onRequestSwitch(next);
+    else router.replace(`/player?${new URLSearchParams(next)}`);
+  };
 
   const refreshPluginRef = useRef<any>(null);
   const volumePluginRef = useRef<any>(null);
@@ -655,7 +664,6 @@ export function MainPlayer({
     playerRef.current = null;
     playbackKindRef.current = null;
 
-    followRoomPluginRef.current = null;
     refreshPluginRef.current = null;
     volumePluginRef.current = null;
     danmuTogglePluginRef.current = null;
@@ -875,7 +883,7 @@ export function MainPlayer({
       const FlvPlugin: any = (flvMod as any)?.default ?? flvMod;
       const HlsPlugin: any = hlsMod ? withHlsTimerCleanup((hlsMod as any).default ?? hlsMod) : null;
       const { applyDanmuOverlayPreferences, createDanmuOverlay, syncDanmuEnabledState } = overlayMod as any;
-      const { FollowRoomControl, DanmuKeywordBlockControl, DanmuSettingsControl, DanmuToggleControl, LineControl, QualityControl, RefreshControl, VolumeControl } =
+      const { DanmuKeywordBlockControl, DanmuSettingsControl, DanmuToggleControl, LineControl, QualityControl, RefreshControl, VolumeControl } =
         pluginsMod as any;
 
       const playerOptions: any = {
@@ -1000,24 +1008,6 @@ export function MainPlayer({
         onClick: () => void reloadStreamRef.current?.("refresh")
       });
 
-      followRoomPluginRef.current = player.registerPlugin?.(FollowRoomControl, {
-        canSwitch: (direction: -1 | 1) => {
-          const nav = navigationRef.current;
-          return !switchPendingRef.current && !!adjacentFollowRoom(nav.follows, nav.platform, nav.roomId, direction);
-        },
-        onSwitch: (direction: -1 | 1) => {
-          const nav = navigationRef.current;
-          if (switchPendingRef.current) return;
-          const target = adjacentFollowRoom(nav.follows, nav.platform, nav.roomId, direction);
-          if (!target) return;
-          switchPendingRef.current = true;
-          followRoomPluginRef.current?.updateAvailability();
-          const next = { platform: target.platform.toLowerCase(), roomId: target.id };
-          if (nav.onRequestSwitch) nav.onRequestSwitch(next);
-          else router.replace(`/player?${new URLSearchParams(next)}`);
-        }
-      });
-
       volumePluginRef.current = player.registerPlugin?.(VolumeControl, {
         position: POSITIONS.CONTROLS_LEFT,
         index: 3
@@ -1102,7 +1092,7 @@ export function MainPlayer({
       await startDanmaku(sessionId, overlay, platform, backendRoomId, filterRoomId);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [currentLine, currentQuality, danmuSettings, isDanmuEnabled, isSessionActive, lineOptions, platform, roomId, router, startDanmaku]
+    [currentLine, currentQuality, danmuSettings, isDanmuEnabled, isSessionActive, lineOptions, platform, roomId, startDanmaku]
   );
 
   const reloadStream = useCallback(
@@ -1450,6 +1440,12 @@ export function MainPlayer({
             <div className="video-container">
               <div className="player-topbar">
                 <div className="floating-actions" data-tauri-drag-region="false">
+                  <button type="button" disabled={!previousFollow || isSwitchingRoom || floating.busy} title="上一个关注的直播间" aria-label="上一个关注的直播间" onClick={() => switchFollowRoom(-1)}>
+                    <ChevronUp size={18} />
+                  </button>
+                  <button type="button" disabled={!nextFollow || isSwitchingRoom || floating.busy} title="下一个关注的直播间" aria-label="下一个关注的直播间" onClick={() => switchFollowRoom(1)}>
+                    <ChevronDown size={18} />
+                  </button>
                   {floating.compact ? <button type="button" disabled={!floating.ready || floating.busy} aria-pressed={floating.pinned} title={floating.pinned ? "取消置顶" : "锁定置顶"} aria-label={floating.pinned ? "取消置顶" : "锁定置顶"} onClick={() => void floating.togglePin()}>
                     {floating.pinned ? <PinOff size={18} /> : <Pin size={18} />}
                   </button> : null}
