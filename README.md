@@ -66,12 +66,12 @@ flowchart LR
 
 ## 安装
 
-面向 **macOS 12 或更新版本**。Apple Silicon 和 Intel 安装包分别提供；macOS 版本较旧时，部分直播编码可能不可用。
+面向 **macOS 12 Monterey 或更新版本**。目前只支持 **Apple Silicon（M 系列芯片）** 的 Mac；Intel Mac 尚未测试，暂不支持。macOS 版本较旧时，部分直播编码可能不可用。
 
 ### DMG 安装（推荐）
 
 1. 打开 [Releases](https://github.com/qinxianhahaha/QTV/releases/latest)。
-2. M 系列芯片下载 `QTV_版本号_aarch64.dmg`；Intel Mac 下载 `QTV_版本号_x64.dmg`。
+2. 下载 `QTV_版本号_aarch64.dmg`。
 3. 打开 DMG，将 **QTV** 拖到 **Applications / 应用程序**。
 4. 从应用程序启动 QTV。
 
@@ -87,7 +87,7 @@ shasum -a 256 ~/Downloads/QTV_1.0.0_aarch64.dmg
 
 ### Homebrew
 
-本仓库自带 Cask，通过自定义 tap 安装：
+本仓库自带 Cask，通过自定义 tap 安装（同样仅支持 Apple Silicon）：
 
 ```sh
 brew tap qinxianhahaha/qtv https://github.com/qinxianhahaha/QTV
@@ -111,12 +111,12 @@ QTV 使用独立的应用标识，可与 DTV 共存。先在 DTV 的数据同步
 
 ## 从源码构建
 
-需要 macOS、Xcode Command Line Tools、Node.js 22 LTS、pnpm 11、Rust（含项目指定的 nightly）、Protobuf。安装过依赖后可跳过对应命令。
+需要 macOS、Xcode Command Line Tools、Node.js 22 LTS、pnpm 11、rustup、Protobuf、pkg-config。Rust 工具链分两部分：`rustup default stable` 设置的 stable 用于 `pnpm check` 里的 Rust 测试；构建应用用的 nightly 由 `src-tauri/rust-toolchain.toml` 指定，第一次构建时 rustup 会自动下载，无需手动安装。安装过依赖后可跳过对应命令。
 
 ```sh
 xcode-select --install
 brew install node@22 pnpm rustup protobuf pkg-config
-export PATH="$(brew --prefix node@22)/bin:$HOME/.cargo/bin:$PATH"
+export PATH="$(brew --prefix node@22)/bin:$(brew --prefix rustup)/bin:$HOME/.cargo/bin:$PATH"
 rustup default stable
 
 # 获取源码
@@ -134,7 +134,7 @@ pnpm tauri dev
 pnpm tauri build --bundles app,dmg
 ```
 
-构建结果位于 `src-tauri/target/release/bundle/`。`src-tauri/rust-toolchain.toml` 指定后端工具链；第一次构建会下载 Rust 组件和 V8 预编译库。需要几分钟，并占用数 GB 空间。
+构建结果位于 `src-tauri/target/release/bundle/`。`src-tauri/rust-toolchain.toml` 指定后端工具链（nightly）；第一次构建会下载 nightly 工具链、Rust 组件和 V8 预编译库。需要几分钟，并占用数 GB 空间。
 
 跨架构构建与发布流程见 [开发说明](docs/DEVELOPMENT.md)。常见问题见 [FAQ](docs/FAQ.md)。本次检查范围、测试结果和已知限制见 [发布审查记录](docs/RELEASE_REVIEW.md)。
 
