@@ -2540,10 +2540,62 @@ video.xgplayer-video {
 }
 
 
-/* Leave room for previous/next and window actions while keeping the title centered. */
-.player-topbar { padding-inline: 132px; }
-.player-compact .player-topbar { padding-inline: 174px; }
+/* Keep the centered title clear of native window and mini-window actions. */
+.player-topbar { padding-inline: 84px; }
+.player-compact .player-topbar { padding-inline: 90px; }
 .floating-actions button { cursor: pointer; }
 .floating-actions button:disabled { cursor: default; }
 .floating-actions button:hover:not(:disabled) { background: rgba(45,45,48,.9); }
 .floating-actions button:focus-visible { outline: 2px solid var(--player-accent); outline-offset: 2px; }
+
+
+/* Follow navigation stays halfway down the video at every window size. */
+.player-channel-nav {
+  position: absolute;
+  z-index: 260;
+  right: clamp(8px, 1.5vw, 20px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 120ms ease;
+}
+.player-channel-nav button {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, .48);
+  border-radius: 14px;
+  background: rgba(24, 24, 27, .88);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, .3);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.player-channel-nav button:hover:not(:disabled) {
+  background: rgba(64, 64, 70, .96);
+  border-color: rgba(255, 255, 255, .85);
+}
+.player-channel-nav button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.player-channel-nav button:disabled { opacity: .4; cursor: default; }
+.player-page.player-chrome-hidden .player-channel-nav {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+@media (max-width: 640px), (max-height: 360px) {
+  .player-channel-nav { gap: 8px; }
+  .player-channel-nav button { width: 40px; height: 40px; border-radius: 11px; }
+  .player-channel-nav svg { width: 24px; height: 24px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .player-channel-nav, .player-channel-nav button { transition: none; }
+}

@@ -484,7 +484,7 @@ export function MainPlayer({
               ".xgplayer-danmu-block-panel, .xgplayer-danmu-settings-panel, .xgplayer-quality-dropdown, .xgplayer-line-dropdown"
             );
 
-          if (hasOpenMenu || isEditingInPopup) {
+          if (hasOpenMenu || isEditingInPopup || root?.querySelector(".player-channel-nav:hover")) {
             setChromeVisible(true);
             armHide();
             return;
@@ -1438,14 +1438,16 @@ export function MainPlayer({
         <div className="main-content">
           <div className="player-container player-container--solo">
             <div className="video-container">
-              <div className="player-topbar">
-                <div className="floating-actions" data-tauri-drag-region="false">
+              <div className="player-channel-nav" role="group" aria-label="切换关注直播间" data-tauri-drag-region="false">
                   <button type="button" disabled={!previousFollow || isSwitchingRoom || floating.busy} title="上一个关注的直播间" aria-label="上一个关注的直播间" onClick={() => switchFollowRoom(-1)}>
-                    <ChevronUp size={18} />
+                    <ChevronUp size={26} />
                   </button>
                   <button type="button" disabled={!nextFollow || isSwitchingRoom || floating.busy} title="下一个关注的直播间" aria-label="下一个关注的直播间" onClick={() => switchFollowRoom(1)}>
-                    <ChevronDown size={18} />
+                    <ChevronDown size={26} />
                   </button>
+              </div>
+              <div className="player-topbar">
+                <div className="floating-actions" data-tauri-drag-region="false">
                   {floating.compact ? <button type="button" disabled={!floating.ready || floating.busy} aria-pressed={floating.pinned} title={floating.pinned ? "取消置顶" : "锁定置顶"} aria-label={floating.pinned ? "取消置顶" : "锁定置顶"} onClick={() => void floating.togglePin()}>
                     {floating.pinned ? <PinOff size={18} /> : <Pin size={18} />}
                   </button> : null}
