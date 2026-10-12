@@ -2599,3 +2599,27 @@ video.xgplayer-video {
 @media (prefers-reduced-motion: reduce) {
   .player-channel-nav, .player-channel-nav button { transition: none; }
 }
+
+
+/* The fullscreen target includes overlays; keep the video beneath them. */
+.player-page:fullscreen,
+.player-page:-webkit-full-screen,
+.player-page.xgplayer-fullscreen-parent {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  max-height: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: #000 !important;
+  border-radius: 0 !important;
+}
+.player-page .video-player.xgplayer-is-fullscreen,
+.player-page .video-player.xgplayer-is-cssfullscreen {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  z-index: 3 !important;
+}

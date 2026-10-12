@@ -207,6 +207,7 @@ export function MainPlayer({
 
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<any>(null);
+  const resumeCssFullscreenRef = useRef(false);
   const playbackKindRef = useRef<null | "hls" | "native-hls" | "flv">(null);
   const danmuOverlayRef = useRef<DanmuOverlayInstance | null>(null);
   const unlistenRef = useRef<null | (() => void)>(null);
@@ -537,6 +538,9 @@ export function MainPlayer({
 
   const floating = useFloatingWindow();
   const requestClose = async () => {
+    const player = playerRef.current;
+    if (player?.cssfullscreen) player.exitCssFullscreen();
+    if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
     if (!await floating.restoreForClose()) return;
     if (onRequestClose) onRequestClose();
     else router.back();
@@ -657,6 +661,7 @@ export function MainPlayer({
     danmuOverlayRef.current = null;
 
     try {
+      if (playerRef.current) resumeCssFullscreenRef.current = !!playerRef.current.cssfullscreen;
       playerRef.current?.destroy();
     } catch {
       // ignore
@@ -888,6 +893,8 @@ export function MainPlayer({
 
       const playerOptions: any = {
         el: playerContainerRef.current,
+        // Include React overlays in both native and CSS fullscreen.
+        fullscreenTarget: pageRef.current,
         url,
         autoplay: true,
         isLive: true,
@@ -998,6 +1005,8 @@ export function MainPlayer({
         player.on?.("fullscreen_change", onFull);
         player.on?.("cssFullscreen_change", onCssFull);
         player.on?.("destroy", () => setIsFullScreen(false));
+        if (resumeCssFullscreenRef.current && !document.fullscreenElement) player.getCssFullscreen();
+        setIsFullScreen(!!player.fullscreen || !!player.cssfullscreen || document.fullscreenElement === pageRef.current);
       } catch {
         // ignore
       }
