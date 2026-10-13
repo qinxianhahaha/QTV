@@ -13,6 +13,12 @@ const parseFontSizePx = (fontSize: string | undefined) => {
   return Number.isFinite(parsed) ? parsed : 20;
 };
 
+// Keep the saved font size intact; adapt only the rendered small-window text.
+const computeEffectiveFontSize = (width: number, configuredSize: number) => {
+  const scale = 0.6 + 0.4 * clamp((width - 320) / 640, 0, 1);
+  return Math.min(configuredSize, Math.max(12, Math.round(configuredSize * scale)));
+};
+
 const computeChannelSize = (fontSizePx: number) => {
   // danmu.js uses virtual channels; channel size should roughly match bullet height.
   // Larger channelSize => fewer channels (better performance, less overlap risk).
@@ -22,18 +28,18 @@ const computeChannelSize = (fontSizePx: number) => {
 const computeMaxBullets = (host: HTMLElement, settings: DanmuUserSettings) => {
   const height = host.offsetHeight || 0;
   const area = sanitizeDanmuArea(settings.area);
-  const fontSizePx = parseFontSizePx(settings.fontSize);
+  const fontSizePx = computeEffectiveFontSize(host.offsetWidth, parseFontSizePx(settings.fontSize));
   const channelSize = computeChannelSize(fontSizePx);
   const visibleHeight = Math.max(1, Math.floor(height * area));
   const approxLines = Math.max(1, Math.floor(visibleHeight / channelSize));
-  return approxLines * 4;
+  return approxLines * (host.offsetWidth < 960 ? 2 : 4);
 };
 
 const computeAreaLines = (host: HTMLElement, settings: DanmuUserSettings) => {
   const height = host.offsetHeight || 0;
   if (height <= 0) return undefined;
   const area = sanitizeDanmuArea(settings.area);
-  const fontSizePx = parseFontSizePx(settings.fontSize);
+  const fontSizePx = computeEffectiveFontSize(host.offsetWidth, parseFontSizePx(settings.fontSize));
   const channelSize = computeChannelSize(fontSizePx);
   const visibleHeight = Math.max(1, Math.floor(height * area));
   const approxLines = Math.max(1, Math.floor(visibleHeight / channelSize));
@@ -165,7 +171,8 @@ export const createDanmuOverlay = (
     let destroyed = false;
     let maxBullets = computeMaxBullets(overlayHost, currentSettings);
 
-    const initialFontSizePx = parseFontSizePx(currentSettings.fontSize);
+    const initialFontSizePx = computeEffectiveFontSize(overlayHost.offsetWidth, parseFontSizePx(currentSettings.fontSize));
+    let renderedFontSizePx = initialFontSizePx;
     const initialChannelSize = computeChannelSize(initialFontSizePx);
     const initialAreaEnd = sanitizeDanmuArea(currentSettings.area);
 
@@ -194,6 +201,8 @@ export const createDanmuOverlay = (
     let layoutReady = false;
     let startupFrame: number | null = null;
     let geometryKey = '';
+    let committedWidth = 0;
+    let committedHeight = 0;
     const canRender = () => !destroyed && currentEnabled && currentOpacity > 0 &&
       document.visibilityState !== 'hidden' && playbackReady && layoutReady && !media?.paused && !media?.ended;
     const syncPlayback = () => {
@@ -224,6 +233,11 @@ export const createDanmuOverlay = (
       const nextKey = `${width}:${height}:${currentSettings.area}:${currentSettings.fontSize}`;
       if (nextKey === geometryKey) return;
       geometryKey = nextKey;
+      const nextFontSize = computeEffectiveFontSize(width, parseFontSizePx(currentSettings.fontSize));
+      if (nextFontSize !== renderedFontSizePx) {
+        renderedFontSizePx = nextFontSize;
+        danmu.setFontSize?.(renderedFontSizePx, computeChannelSize(renderedFontSizePx));
+      }
       maxBullets = computeMaxBullets(overlayHost, currentSettings);
       danmu.setArea?.({ start: 0, end: sanitizeDanmuArea(currentSettings.area), lines: computeAreaLines(overlayHost, currentSettings) });
     };
@@ -240,16 +254,36 @@ export const createDanmuOverlay = (
           startupFrame = null;
           if (destroyed || !playbackReady) return;
           updateGeometry();
-          layoutReady = overlayHost.offsetWidth > 0 && overlayHost.offsetHeight > 0;
+          committedWidth = overlayHost.offsetWidth;
+          committedHeight = overlayHost.offsetHeight;
+          layoutReady = committedWidth > 0 && committedHeight > 0;
           syncPlayback();
         });
       });
     };
-    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
-      updateGeometry();
+    const onDisplayModeChange = () => {
+      if (destroyed) return;
+      // WebKit may abandon existing bullet transitions when moving into the
+      // fullscreen layer. Drop old live bullets before rebuilding their tracks.
+      cancelStartup();
+      layoutReady = false;
+      syncPlayback();
       settleLayout();
+    };
+    const resizeObserver = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(() => {
+      if (overlayHost.offsetWidth !== committedWidth || overlayHost.offsetHeight !== committedHeight) {
+        onDisplayModeChange();
+      } else {
+        settleLayout();
+      }
     });
     resizeObserver?.observe(overlayHost);
+    const fullscreenEvents = ['fullscreen_change', 'cssFullscreen_change'];
+    fullscreenEvents.forEach(event => player.on?.(event, onDisplayModeChange));
+    const documentFullscreenEvents = ['fullscreenchange', 'webkitfullscreenchange'];
+    documentFullscreenEvents.forEach(event => document.addEventListener(event, onDisplayModeChange));
+    // Also covers native macOS window fullscreen and environments without RO.
+    window.addEventListener('resize', onDisplayModeChange);
     const onMediaEvent = (event: Event) => {
       const now = Number(media?.currentTime || 0);
       if (event.type === 'timeupdate') {
@@ -287,9 +321,11 @@ export const createDanmuOverlay = (
 
           // 高密度时做轻量限流（优先保证不重叠/不卡顿）。
           try {
-            const bullets = (danmu as any)?.state?.bullets;
+            const state = (danmu as any)?.state;
+            const bullets = state?.bullets;
             const bulletCount = Array.isArray(bullets) ? bullets.length : 0;
-            if (bulletCount >= maxBullets) {
+            const pending = Array.isArray(state?.comments) ? state.comments.filter((item: any) => !item.attached_).length : 0;
+            if (bulletCount + pending >= maxBullets) {
               return;
             }
           } catch {
@@ -299,11 +335,12 @@ export const createDanmuOverlay = (
           const id = comment.id || `${Date.now()}_${Math.random().toString(16).slice(2)}`;
           const duration = clamp(Number(comment.duration ?? currentSettings.duration ?? 12000), 5000, 60000);
           const mode = comment.mode === 'top' || comment.mode === 'bottom' || comment.mode === 'scroll' ? comment.mode : 'scroll';
-          const fontSizePx = parseFontSizePx(currentSettings.fontSize);
+          const fontSizePx = renderedFontSizePx;
           const mergedStyle = {
-            fontSize: `${fontSizePx}px`,
             color: comment.style?.color || currentSettings.color || '#ffffff',
             ...(comment.style ?? {}),
+            // Imported/per-comment font styles must not bypass window scaling.
+            fontSize: `${fontSizePx}px`,
           };
 
           danmu.sendComment({ id, txt: comment.txt, duration, mode, style: mergedStyle } as any);
@@ -333,6 +370,9 @@ export const createDanmuOverlay = (
         destroyed = true;
         cancelStartup();
         resizeObserver?.disconnect();
+        fullscreenEvents.forEach(event => player.off?.(event, onDisplayModeChange));
+        documentFullscreenEvents.forEach(event => document.removeEventListener(event, onDisplayModeChange));
+        window.removeEventListener('resize', onDisplayModeChange);
         document.removeEventListener('visibilitychange', syncPlayback);
         mediaEvents.forEach(event => media?.removeEventListener?.(event, onMediaEvent));
         danmu.destroy();
@@ -370,11 +410,6 @@ export const createDanmuOverlay = (
         if (!Number.isFinite(next)) return;
         if (destroyed || parseFontSizePx(currentSettings.fontSize) === next) return;
         currentSettings = { ...currentSettings, fontSize: `${next}px` };
-        try {
-          danmu.setFontSize?.(next, computeChannelSize(next));
-        } catch {
-          // ignore
-        }
         try {
           updateGeometry();
         } catch {
