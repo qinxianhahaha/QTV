@@ -69,7 +69,7 @@ async fn image_proxy_handler(query: web::Query<ImageQuery>, client: web::Data<Cl
         .body(body)
 }
 
-async fn flv_proxy_handler(_req: HttpRequest, store: web::Data<StreamUrlStore>, client: web::Data<Client>) -> HttpResponse {
+async fn flv_proxy_handler(_req: HttpRequest, store: web::Data<StreamUrlStore>, client: web::Data<Client>, traffic: web::Data<crate::media_traffic::MediaTraffic>) -> HttpResponse {
     let raw = store.url.lock().unwrap().clone();
     let Ok(url) = reqwest::Url::parse(&raw) else { return HttpResponse::NotFound().finish() };
     if !crate::network_policy::external_url_allowed(&url) { return HttpResponse::BadRequest().finish() }
@@ -84,7 +84,8 @@ async fn flv_proxy_handler(_req: HttpRequest, store: web::Data<StreamUrlStore>, 
     } else if bilibili { request = request.header("Referer", "https://live.bilibili.com/"); }
     let Ok(response) = request.send().await else { return HttpResponse::BadGateway().finish() };
     if !response.status().is_success() { return HttpResponse::BadGateway().finish() }
-    let stream = response.bytes_stream().map_err(|_| actix_web::error::ErrorBadGateway("Upstream stream ended"));
+    let stream = response.bytes_stream().inspect_ok(move |chunk| traffic.add(chunk.len()))
+        .map_err(|_| actix_web::error::ErrorBadGateway("Upstream stream ended"));
     HttpResponse::Ok().content_type("video/x-flv").insert_header(("Cache-Control", "no-store")).streaming(stream)
 }
 
@@ -95,15 +96,19 @@ pub async fn start_proxy(_app_handle: AppHandle, server_handle_state: State<'_, 
     if let Some(handle) = previous { handle.stop(false).await; }
     let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|e| e.to_string())?;
     let port = listener.local_addr().map_err(|e| e.to_string())?.port();
-    let path = format!("/{}/live.flv", nonce());
+    let prefix = nonce();
+    let path = format!("/{prefix}/live.flv");
+    let traffic_path = format!("/{prefix}/traffic");
     let output = format!("http://127.0.0.1:{port}{path}");
     let store = stream_url_store.inner().clone();
     // No whole-request deadline on a live stream: it may play for hours.
     let client = Client::builder().no_proxy().http1_only().gzip(false).brotli(false)
         .connect_timeout(Duration::from_secs(10)).tcp_keepalive(Duration::from_secs(30))
         .build().map_err(|e| e.to_string())?;
-    let server = HttpServer::new(move || App::new().wrap(cors())
+    let traffic = web::Data::new(crate::media_traffic::MediaTraffic::default());
+    let server = HttpServer::new(move || App::new().wrap(cors()).app_data(traffic.clone())
         .app_data(web::Data::new(store.clone())).app_data(web::Data::new(client.clone()))
+        .route(&traffic_path, web::get().to(crate::media_traffic::snapshot))
         .route(&path, web::get().to(flv_proxy_handler)))
         .workers(2).listen(listener).map_err(|e| e.to_string())?.run();
     *server_handle_state.0.lock().unwrap() = Some(server.handle());

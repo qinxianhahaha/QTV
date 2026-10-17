@@ -72,7 +72,7 @@ impl Resources {
 
 pub(crate) struct Transport { pub(crate) client: Client, pub(crate) resources: Mutex<Resources>, pub(crate) referer: &'static str }
 
-pub(crate) async fn relay(request: HttpRequest, transport: web::Data<Transport>) -> HttpResponse {
+pub(crate) async fn relay(request: HttpRequest, transport: web::Data<Transport>, traffic: Option<web::Data<crate::media_traffic::MediaTraffic>>) -> HttpResponse {
     let Some(id) = request.match_info().get("id") else { return HttpResponse::NotFound().finish(); };
     let url = transport.resources.lock().ok().and_then(|r| r.urls.get(id).cloned());
     let Some(url) = url else { return HttpResponse::NotFound().finish(); };
@@ -106,6 +106,7 @@ pub(crate) async fn relay(request: HttpRequest, transport: web::Data<Transport>)
             let mut stream = response.bytes_stream();
             while let Some(chunk) = stream.next().await {
                 let chunk = chunk.map_err(|_| ())?;
+                if let Some(traffic) = &traffic { traffic.add(chunk.len()); }
                 if bytes.len() + chunk.len() > 2 * 1024 * 1024 { return Err(()); }
                 bytes.extend_from_slice(&chunk);
             }
@@ -127,7 +128,9 @@ pub(crate) async fn relay(request: HttpRequest, transport: web::Data<Transport>)
     for name in ["content-length", "content-range", "accept-ranges"] {
         if let Some(value) = response.headers().get(name).and_then(|v| v.to_str().ok()) { output.insert_header((name, value)); }
     }
-    let stream = response.bytes_stream().map_err(|_| actix_web::error::ErrorBadGateway("Media stream ended"));
+    let stream = response.bytes_stream().inspect_ok(move |chunk| {
+        if let Some(traffic) = &traffic { traffic.add(chunk.len()); }
+    }).map_err(|_| actix_web::error::ErrorBadGateway("Media stream ended"));
     output.streaming(stream)
 }
 
@@ -200,7 +203,10 @@ mod tests {
             client: direct_client_builder().unwrap().build().unwrap(), referer: "https://live.bilibili.com/",
             resources: Mutex::new(Resources { base: "http://127.0.0.1/direct".into(), urls: HashMap::from([("1".into(), url)]), ids: HashMap::new(), order: VecDeque::new(), next_id: 1 }),
         });
-        let app = actix_web::test::init_service(App::new().app_data(transport).route("/direct/{id}/{file}", web::get().to(relay)).route("/direct/{id}/{file}", web::head().to(relay))).await;
+        let traffic = web::Data::new(crate::media_traffic::MediaTraffic::default());
+        let app = actix_web::test::init_service(App::new().app_data(transport).app_data(traffic.clone())
+            .route("/direct/traffic", web::get().to(crate::media_traffic::snapshot))
+            .route("/direct/{id}/{file}", web::get().to(relay)).route("/direct/{id}/{file}", web::head().to(relay))).await;
         let response = actix_web::test::call_service(&app, actix_web::test::TestRequest::get().uri("/direct/1/video.ts").to_request()).await;
         assert!(response.status().is_success());
         assert_eq!(actix_web::test::read_body(response).await.as_ref(), b"ABCDEF");
@@ -213,6 +219,12 @@ mod tests {
         assert!(actix_web::test::read_body(response).await.is_empty());
         let response = actix_web::test::call_service(&app, actix_web::test::TestRequest::get().uri("/direct/999/video.ts").to_request()).await;
         assert_eq!(response.status().as_u16(), 404);
+        assert_eq!(traffic.total(), 9); // 6 bytes + 3 range bytes; HEAD and errors add nothing.
+        let response = actix_web::test::call_service(&app, actix_web::test::TestRequest::get().uri("/direct/traffic").to_request()).await;
+        assert_eq!(response.headers().get("Cache-Control").unwrap(), "no-store");
+        let snapshot: serde_json::Value = actix_web::test::read_body_json(response).await;
+        assert_eq!(snapshot["totalBytes"], 9);
+        assert_eq!(traffic.total(), 9); // Reading statistics is not media traffic.
         upstream.join().unwrap();
         let requests = requests.lock().unwrap();
         assert!(requests[1].to_ascii_lowercase().contains("range: bytes=1-3"));

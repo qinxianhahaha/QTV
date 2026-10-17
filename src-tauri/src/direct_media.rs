@@ -34,10 +34,13 @@ pub async fn prepare_direct_media_url(url: String, platform: String, settings: S
     let client = direct_client_builder().and_then(|builder| builder.build()).map_err(|e| e.to_string())?;
     let transport = web::Data::new(Transport { client, resources: Mutex::new(resources), referer });
     let route = format!("{prefix}/{{id}}/{{file}}");
-    let server = HttpServer::new(move || App::new().app_data(transport.clone())
+    let traffic_route = format!("{prefix}/traffic");
+    let traffic = web::Data::new(crate::media_traffic::MediaTraffic::default());
+    let server = HttpServer::new(move || App::new().app_data(transport.clone()).app_data(traffic.clone())
         .wrap(actix_cors::Cors::default().allowed_origin("tauri://localhost").allowed_origin("http://tauri.localhost")
             .allowed_origin("https://tauri.localhost").allowed_origin("http://localhost:2896")
             .allowed_methods(vec!["GET", "HEAD", "OPTIONS"]).allow_any_header().expose_headers(vec!["Content-Range", "Accept-Ranges", "Content-Length"]))
+        .route(&traffic_route, web::get().to(crate::media_traffic::snapshot))
         .route(&route, web::get().to(relay)).route(&route, web::head().to(relay)))
         .workers(2).listen(listener).map_err(|e| e.to_string())?.run();
     *state.0.lock().map_err(|_| "Media state unavailable")? = Some(server.handle());

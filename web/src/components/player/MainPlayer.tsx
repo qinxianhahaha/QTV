@@ -259,6 +259,7 @@ export function MainPlayer({
   const [recoveryState, setRecoveryState] = useState<RecoveryState>(null);
   const [actualLine, setActualLine] = useState<string | null>(null);
   const [playbackEngine, setPlaybackEngine] = useState<string | null>(null);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
 
   const [isLoadingStream, setIsLoadingStream] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
@@ -1125,6 +1126,7 @@ export function MainPlayer({
           setStreamError(null);
           setIsOfflineError(false);
           statsRef.current = { ...EMPTY_PLAYBACK_STATS };
+          setMediaUrl(null);
           if (trigger !== "recovery") {
             actualQualityRef.current = null;
             qualityPluginRef.current?.updateLabel?.(currentQualityRef.current);
@@ -1184,6 +1186,7 @@ export function MainPlayer({
           });
           if (!isSessionActive(sessionId)) return;
           actualQualityRef.current = stream.actualQuality || null;
+          setMediaUrl(stream.streamUrl);
           sourceInfoRef.current = { sourceFps: stream.sourceFps, sourceCodec: stream.sourceCodec };
           setActualLine(stream.actualLine || (route ? `备用线路 ${route}` : "自动"));
           if (stream.qualityLimited) {
@@ -1460,6 +1463,7 @@ export function MainPlayer({
                   {floating.compact ? <button type="button" disabled={!floating.ready || floating.busy} aria-pressed={floating.pinned} title={floating.pinned ? "取消置顶" : "锁定置顶"} aria-label={floating.pinned ? "取消置顶" : "锁定置顶"} onClick={() => void floating.togglePin()}>
                     {floating.pinned ? <PinOff size={18} /> : <Pin size={18} />}
                   </button> : null}
+                  <PlaybackInfo onOpenChange={open => { playbackInfoOpenRef.current = open; }} statsRef={statsRef} mediaUrl={mediaUrl} quality={actualQualityRef.current} line={actualLine} engine={playbackEngine} />
                   <button type="button" disabled={!floating.ready || floating.busy || isFullScreen} title={floating.compact ? "恢复窗口大小" : "缩为小窗"} aria-label={floating.compact ? "恢复窗口大小" : "缩为小窗"} onClick={(e) => {
                     const rect = e.currentTarget.getBoundingClientRect();
                     void floating.toggleCompact({ x: e.detail ? e.clientX : rect.left + rect.width / 2, y: e.detail ? e.clientY : rect.top + rect.height / 2 });
@@ -1531,7 +1535,6 @@ export function MainPlayer({
                 {platform === Platform.BILIBILI ? <BilibiliCookieControls autoBootstrap={false} onCookieChanged={() => void reloadStream("refresh")} /> : null}
               </div> : null}
 
-              <PlaybackInfo onOpenChange={open => { playbackInfoOpenRef.current = open; }} statsRef={statsRef} quality={actualQualityRef.current} line={actualLine} engine={playbackEngine} />
               {recoveryState && recoveryState.phase !== 'failed' ? <div className="playback-recovery" role="status">
                 {recoveryState.phase === 'waiting' ? '网络已断开，联网后自动继续' : `正在恢复播放 · ${recoveryState.attempt}/${recoveryState.max}`}
               </div> : null}

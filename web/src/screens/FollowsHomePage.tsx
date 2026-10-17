@@ -152,7 +152,11 @@ export function FollowsHomePage() {
             />
             <div className={styles.coverShade} />
             <span className={styles.liveBadge}><i />直播中</span>
-            <span className={styles.platformChip}>{platformNames[s.platform]}</span>
+            <span className={styles.platformChip} title={platformNames[s.platform]}>
+              <span className={styles.platformGlyph} data-platform={s.platform}>
+                <img src={`/platforms/${s.platform.toLowerCase()}.${s.platform === 'HUYA' ? 'png' : 'svg'}`} alt={platformNames[s.platform]} />
+              </span>
+            </span>
             <span className={styles.playIcon}><span><Play size={22} fill="currentColor" /></span></span>
           </div>
           <div className={styles.liveMeta}>

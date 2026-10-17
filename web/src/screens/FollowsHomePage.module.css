@@ -352,23 +352,58 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #fff;
-}
-
-.liveBadge i::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 50%;
-  background: #fff;
-  opacity: 0;
+  background: #36d777;
+  box-shadow: 0 0 5px rgba(54, 215, 119, 0.25);
 }
 
 .platformChip {
   right: 10px;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  z-index: 1;
+  width: 34px;
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  border-radius: 10px;
+  background: rgba(25, 27, 33, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.22);
+  pointer-events: none;
+}
+
+.platformGlyph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+}
+
+.platformChip img {
+  display: block;
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.platformGlyph[data-platform="DOUYU"] img {
+  width: 27px;
+  height: 25px;
+}
+
+/* Show only the mascot from the official transparent Huya wordmark. */
+.platformGlyph[data-platform="HUYA"] {
+  position: relative;
+  width: 24px;
+  height: 24px;
+}
+
+.platformGlyph[data-platform="HUYA"] img {
+  position: absolute;
+  left: 0;
+  width: auto;
+  max-width: none;
+  height: 22px;
 }
 
 .platformChip i,

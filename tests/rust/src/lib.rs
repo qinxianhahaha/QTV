@@ -28,3 +28,5 @@ pub mod douyu_web_signature;
 
 #[path = "../../../src-tauri/src/direct_media_transport.rs"]
 pub mod direct_media_transport;
+#[path = "../../../src-tauri/src/media_traffic.rs"]
+pub mod media_traffic;

@@ -19,6 +19,7 @@ mod network_policy;
 mod network_settings;
 mod direct_media;
 mod direct_media_transport;
+mod media_traffic;
 mod media_playlist;
 mod media_network_policy;
 mod version_check;
