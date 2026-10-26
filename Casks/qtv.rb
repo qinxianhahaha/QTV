@@ -1,6 +1,6 @@
 cask "qtv" do
-  version "1.1.3"
-  sha256 "d4f3f2fdbae90fed6b8351cd552212eeca99869f44521318ad21e3cb018ac72b"
+  version "1.1.5"
+  sha256 "f3cd1e7e8d2e69642badc4163634ae8cff151b941eda672f5e6ac113ca55fed4"
 
   url "https://github.com/qinxianhahaha/QTV/releases/download/v#{version}/QTV_#{version}_aarch64.dmg"
   name "QTV"

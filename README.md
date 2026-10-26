@@ -93,7 +93,7 @@ flowchart LR
 Release 同时提供 ZIP 和 `SHA256SUMS.txt`。校验示例：
 
 ```sh
-shasum -a 256 ~/Downloads/QTV_1.1.3_aarch64.dmg
+shasum -a 256 ~/Downloads/QTV_1.1.5_aarch64.dmg
 ```
 
 将输出与同一 Release 的 `SHA256SUMS.txt` 对照。
