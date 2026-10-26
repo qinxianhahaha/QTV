@@ -2165,6 +2165,44 @@ video.xgplayer-video {
   pointer-events: auto !important;
 }
 
+/* The inner row is absolutely positioned, so outer controls padding cannot inset it. */
+.player-page .xgplayer .xg-inner-controls {
+  left: 16px;
+  right: 16px;
+  bottom: 12px;
+}
+
+/* Keep fullscreen actions clear of window edges and give the entire button a hit area. */
+.player-page .xgplayer :is(.xgplayer-fullscreen, .xgplayer-cssfullscreen, .xgplayer-pip) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  margin: 0;
+}
+
+.player-page .xgplayer :is(.xgplayer-fullscreen, .xgplayer-cssfullscreen, .xgplayer-pip) .xgplayer-icon {
+  top: auto;
+  transform: none;
+  width: 24px;
+  height: 24px;
+  pointer-events: none;
+}
+
+.player-page .xgplayer :is(.xgplayer-fullscreen, .xgplayer-cssfullscreen, .xgplayer-pip) svg {
+  width: 24px;
+  height: 24px;
+}
+
+.player-page .xgplayer .xgplayer-fullscreen .xg-tips {
+  left: auto;
+  right: 0;
+  transform: none;
+  pointer-events: none;
+}
+
 /* 强制显示控制栏：避免 xgplayer-inactive / not-allow-autoplay 把 controls 隐藏掉 */
 .player-page:not(.player-chrome-hidden) .xgplayer.xgplayer-inactive .controls-autohide,
 .player-page:not(.player-chrome-hidden) .xgplayer.not-allow-autoplay .xgplayer-controls,
